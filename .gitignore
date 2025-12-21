@@ -48,4 +48,6 @@ google-services.json
 GoogleService-Info.plist
 # Local API keys resource (do not commit real keys)
 android/app/src/main/res/values/apis.xml
+android/key.properties
+android/keystore.jks
 EOL

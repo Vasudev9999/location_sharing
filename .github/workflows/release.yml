@@ -1,0 +1,89 @@
+name: Build and attach signed APK on release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "Missing KEYSTORE_BASE64 secret"; exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore.jks
+
+      - name: Create key.properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=keystore.jks
+          EOF
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Get release tag
+        id: get_tag
+        run: |
+          # GITHUB_REF contains refs/tags/<tag> for release triggers
+          echo "ref=${GITHUB_REF}" >> $GITHUB_OUTPUT
+          if [[ "$GITHUB_REF" =~ refs/tags/(.*) ]]; then
+            TAG=${BASH_REMATCH[1]}
+            # strip leading v if present
+            TAG_NO_V=${TAG#v}
+            echo "tag=$TAG_NO_V" >> $GITHUB_OUTPUT
+          else
+            echo "tag=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release --build-name=${{ steps.get_tag.outputs.tag }} --build-number=${GITHUB_RUN_NUMBER}
+
+      - name: Compute SHA256
+        id: sha
+        run: |
+          FILE=build/app/outputs/flutter-apk/app-release.apk
+          SHA=$(sha256sum $FILE | awk '{print $1}')
+          echo "apk_sha256=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Create latest.json
+        run: |
+          cat > latest.json <<EOF
+          {
+            "versionName": "${{ steps.get_tag.outputs.tag }}",
+            "versionCode": ${GITHUB_RUN_NUMBER},
+            "apk_sha256": "${{ steps.sha.outputs.apk_sha256 }}"
+          }
+          EOF
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk,latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
