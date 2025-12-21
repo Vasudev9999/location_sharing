@@ -8,10 +8,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+
 android {
     namespace = "com.example.myproject"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Use a specific NDK version required by some plugins to avoid mismatch warnings
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -31,6 +33,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Google Maps API key is read from `android/app/src/main/res/values/apis.xml`.
+        // Keep that file locally and do not commit it to source control (it's listed in .gitignore).
     }
 
     buildTypes {
