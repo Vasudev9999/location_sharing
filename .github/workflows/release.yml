@@ -32,6 +32,13 @@ jobs:
           if [ -z "$KEYSTORE_BASE64" ]; then echo "Missing KEYSTORE_BASE64 secret"; exit 1; fi
           echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore.jks
 
+      - name: Create google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then echo "Missing GOOGLE_SERVICES_JSON secret"; exit 1; fi
+          echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
       - name: Create key.properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
