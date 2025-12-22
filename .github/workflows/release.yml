@@ -3,6 +3,8 @@ name: Build and attach signed APK on release
 on:
   release:
     types: [published]
+  # allow manual runs for debugging and testing
+  workflow_dispatch: {}
 
 jobs:
   build:
