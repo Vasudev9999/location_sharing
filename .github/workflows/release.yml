@@ -115,10 +115,3 @@ jobs:
         with:
           files: build/app/outputs/flutter-apk/app-release.apk,latest.json
           token: ${{ secrets.GH_RELEASE_TOKEN }}
-        # Use a personal/repo token with appropriate scopes if the default
-        # GITHUB_TOKEN is not allowed to access the release resource.
-        # Create a repo secret named GH_RELEASE_TOKEN with a personal access
-        # token that has `repo` (classic) or appropriate fine-grained write
-        # access to contents/releases.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
