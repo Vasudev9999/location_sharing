@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'wrapper.dart';
+import 'services/app_update_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +43,31 @@ class MyApp extends StatelessWidget {
         ),
       ),
       debugShowCheckedModeBanner: false,
-      home: const AuthWrapper(),
+      home: const _AppWithUpdateCheck(),
     );
+  }
+}
+
+/// Wrapper widget that checks for updates after the first frame
+class _AppWithUpdateCheck extends StatefulWidget {
+  const _AppWithUpdateCheck({Key? key}) : super(key: key);
+
+  @override
+  State<_AppWithUpdateCheck> createState() => _AppWithUpdateCheckState();
+}
+
+class _AppWithUpdateCheckState extends State<_AppWithUpdateCheck> {
+  @override
+  void initState() {
+    super.initState();
+    // Check for updates after first frame renders
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdateManager().checkAndShowUpdateIfAvailable(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const AuthWrapper();
   }
 }
