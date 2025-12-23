@@ -6,6 +6,12 @@ on:
   # allow manual runs for debugging and testing
   workflow_dispatch: {}
 
+# Grant explicit permissions for release operations; defaults may be restricted
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -108,5 +114,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/app/outputs/flutter-apk/app-release.apk,latest.json
+        # Use a personal/repo token with appropriate scopes if the default
+        # GITHUB_TOKEN is not allowed to access the release resource.
+        # Create a repo secret named GH_RELEASE_TOKEN with a personal access
+        # token that has `repo` (classic) or appropriate fine-grained write
+        # access to contents/releases.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
