@@ -39,6 +39,19 @@ jobs:
           if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then echo "Missing GOOGLE_SERVICES_JSON_BASE64 secret"; exit 1; fi
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
 
+      - name: Create google maps strings resource
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          if [ -z "$GOOGLE_MAPS_API_KEY" ]; then echo "Missing GOOGLE_MAPS_API_KEY secret"; exit 1; fi
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/strings.xml <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <string name="google_maps_api_key">${GOOGLE_MAPS_API_KEY}</string>
+          </resources>
+          XML
+
       - name: Create key.properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
