@@ -1,6 +1,7 @@
 // lib/screens/login_page.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
 import 'register_page.dart';
 import 'home_page.dart';
@@ -20,6 +21,20 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _isGoogleSigningIn = false;
   bool _obscurePassword = true;
+  String _appVersion = 'v1.0.0';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    setState(() {
+      _appVersion = 'v${packageInfo.version}';
+    });
+  }
 
   @override
   void dispose() {
@@ -137,6 +152,30 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Version info at top
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.shade300),
+                      ),
+                      child: Text(
+                        _appVersion,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 30),
                   // App logo or image
                   const Icon(Icons.lock, size: 80, color: Colors.blue),
                   const SizedBox(height: 40),
