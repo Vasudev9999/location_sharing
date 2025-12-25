@@ -276,9 +276,9 @@ class _HomePageState extends State<HomePage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'Welcome to Location Sharing',
-                                      style: TextStyle(
+                                    Text(
+                                      'Welcome ${user?.displayName ?? user?.email?.split('@')[0] ?? 'User'}',
+                                      style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
@@ -286,10 +286,11 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '${user?.displayName ?? user?.email?.split('@')[0] ?? 'User'}',
+                                      'Location Sharing Active',
                                       style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.white.withOpacity(0.9),
+                                        fontSize: 13,
+                                        color: Colors.white.withOpacity(0.8),
+                                        fontStyle: FontStyle.italic,
                                       ),
                                     ),
                                   ],
