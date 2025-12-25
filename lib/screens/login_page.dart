@@ -91,21 +91,27 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       if (mounted) {
-        // Show an error dialog
-        // showDialog(
-        //   context: context,
-        //   builder:
-        //       (context) => AlertDialog(
-        //         title: const Text('Google Sign In Error'),
-        //         content: Text('Failed to sign in: ${e.toString()}'),
-        //         actions: [
-        //           TextButton(
-        //             onPressed: () => Navigator.pop(context),
-        //             child: const Text('OK'),
-        //           ),
-        //         ],
-        //       ),
-        // );
+        String errorMessage = 'Failed to sign in with Google';
+
+        if (e.toString().contains('Network')) {
+          errorMessage = 'Network error. Please check your connection.';
+        } else if (e.toString().contains('PERMISSION_DENIED')) {
+          errorMessage =
+              'Permission denied. Please check your Google account settings.';
+        } else if (e.toString().contains('10: ')) {
+          errorMessage = 'Google Sign-In error. Please try again.';
+        } else if (e.toString().contains('authentication')) {
+          errorMessage = 'Authentication failed. Please try again.';
+        }
+
+        // Show snackbar with error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
       }
       print('Error signing in with Google: $e');
     } finally {

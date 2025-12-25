@@ -44,19 +44,15 @@ class AuthService {
     }
   }
 
-  // Sign in with Google - simplified approach
+  // Sign in with Google - fixed approach with error handling
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      // Create a fresh instance of GoogleSignIn to avoid state issues
-      final GoogleSignIn googleSignIn = GoogleSignIn();
+      // Use the existing GoogleSignIn instance
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
-      // Force sign out first to clear any cached state
-      await googleSignIn.signOut().catchError((_) {});
-
-      // Start the sign-in process
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
       if (googleUser == null) {
         // User canceled the sign-in flow
+        print("Google Sign-In was canceled by user");
         return null;
       }
 
@@ -65,18 +61,37 @@ class AuthService {
         final GoogleSignInAuthentication googleAuth =
             await googleUser.authentication;
 
-        // Create Firebase credential
+        // Check for null tokens
+        if (googleAuth.accessToken == null && googleAuth.idToken == null) {
+          throw Exception(
+            "Failed to get valid authentication tokens from Google",
+          );
+        }
+
+        // Create Firebase credential - use idToken as primary, accessToken as fallback
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
 
         // Sign in with Firebase
-        return await _auth.signInWithCredential(credential);
+        final UserCredential userCredential = await _auth.signInWithCredential(
+          credential,
+        );
+
+        print(
+          "Successfully signed in with Google: ${userCredential.user?.email}",
+        );
+        return userCredential;
       } catch (e) {
-        print("Error in Google authentication: $e");
+        print("Error in Google authentication details: $e");
+        // Try to sign out on error
+        await _googleSignIn.signOut().catchError((_) {});
         rethrow;
       }
+    } on FirebaseAuthException catch (e) {
+      print("Firebase Auth Error: ${e.code} - ${e.message}");
+      rethrow;
     } catch (e) {
       print("Error in Google Sign-In: $e");
       rethrow;
