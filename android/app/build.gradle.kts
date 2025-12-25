@@ -61,6 +61,16 @@ android {
             // TODO: Add your own signing config for the release build.
             // Use release signing config if available (key.properties or CI-provided keystore)
             signingConfig = signingConfigs.getByName("release")
+            
+            // Disable minification for now to ensure compatibility with Android QPR Beta 3
+            isMinifyEnabled = false
+            isShrinkResources = false
+            
+            // ProGuard rules are available in proguard-rules.pro if minification is enabled in future
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
