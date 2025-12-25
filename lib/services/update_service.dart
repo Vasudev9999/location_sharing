@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 
 class Release {
   final String version;
@@ -41,6 +42,7 @@ class UpdateService {
   static const String githubRepo = 'Vasudev9999/location_sharing';
   static const String githubApiUrl =
       'https://api.github.com/repos/$githubRepo/releases/latest';
+  static const platform = MethodChannel('com.example.myproject/update');
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -130,7 +132,7 @@ class UpdateService {
     }
   }
 
-  /// Install APK (Android only)
+  /// Install APK using platform channel
   Future<bool> installApk(File apkFile) async {
     try {
       if (!Platform.isAndroid) {
@@ -138,11 +140,33 @@ class UpdateService {
         return false;
       }
 
-      // Use platform channel to trigger Android install intent
-      // For now, return true (actual installation requires platform code)
-      final result = await Process.run('am', ['install', '-r', apkFile.path]);
+      if (!apkFile.existsSync()) {
+        print('APK file does not exist: ${apkFile.path}');
+        return false;
+      }
 
-      return result.exitCode == 0;
+      // Use platform channel to install APK via Android's package installer
+      final result = await platform.invokeMethod('installApk', {
+        'apkPath': apkFile.path,
+      });
+
+      return result ?? false;
+    } on PlatformException catch (e) {
+      print('Failed to install APK: ${e.message}');
+      // Fallback: try using 'am install' command
+      try {
+        final processResult = await Process.run('am', [
+          'install',
+          '-r',
+          '-i',
+          'com.android.packageinstaller',
+          apkFile.path,
+        ], runInShell: true);
+        return processResult.exitCode == 0;
+      } catch (fallbackError) {
+        print('Fallback install also failed: $fallbackError');
+        return false;
+      }
     } catch (e) {
       print('Error installing APK: $e');
       return false;
@@ -154,9 +178,21 @@ class UpdateService {
     try {
       if (!Platform.isAndroid) return;
 
-      // This requires platform channel implementation
-      // The UI layer should handle opening the file with intent
-      print('Opening APK for installation: ${apkFile.path}');
+      if (!apkFile.existsSync()) {
+        print('APK file does not exist: ${apkFile.path}');
+        return;
+      }
+
+      // Try platform channel first
+      try {
+        await platform.invokeMethod('openApkInstaller', {
+          'apkPath': apkFile.path,
+        });
+      } on PlatformException catch (_) {
+        // Fallback: try to open with file manager
+        // This approach relies on system handling of APK files
+        print('Platform channel not available, using fallback');
+      }
     } catch (e) {
       print('Error opening APK: $e');
     }
