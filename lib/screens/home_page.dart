@@ -1,13 +1,151 @@
-// lib/screens/home_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
-import 'dart:async';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../models/user_location.dart';
 import 'login_page.dart';
 
+// ---------------------------------------------------------------------------
+// 1. THEME CONSTANTS
+// ---------------------------------------------------------------------------
+const Color kBgColor = Color(0xFFE0F7FA);
+const Color kCardBg = Color(0xFFFFFDE7);
+const Color kAccentYellow = Color(0xFFFFD54F);
+const Color kAccentOrange = Color(0xFFFF8A80);
+const Color kAccentBlue = Color(0xFF80D8FF);
+const Color kAccentGreen = Color(0xFFB9F6CA);
+const Color kBlack = Color(0xFF212121);
+
+const double kBorderWidth = 3.0;
+const double kShadowOffset = 4.0;
+const double kRadius = 24.0;
+const double kElementRadius = 14.0;
+
+// ---------------------------------------------------------------------------
+// 2. CUSTOM MAP STYLE JSON
+// ---------------------------------------------------------------------------
+const String _mapStyle = '''
+[
+  {
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#FFFDE7" } 
+    ]
+  },
+  {
+    "elementType": "labels.text.fill",
+    "stylers": [
+      { "color": "#212121" }
+    ]
+  },
+  {
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      { "color": "#ffffff" },
+      { "weight": 4 }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      { "color": "#212121" },
+      { "weight": 1.5 }
+    ]
+  },
+  {
+    "featureType": "landscape.natural",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#E0F7FA" }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#B9F6CA" }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#ffffff" },
+      { "weight": 2 }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      { "color": "#212121" },
+      { "weight": 1 }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry.fill",
+    "stylers": [
+      { "color": "#80D8FF" }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      { "color": "#212121" }
+    ]
+  }
+]
+''';
+
+// ---------------------------------------------------------------------------
+// 3. STYLING HELPERS
+// ---------------------------------------------------------------------------
+BoxDecoration artistDecoration({
+  required Color color,
+  double radius = kRadius,
+  bool isPressed = false,
+  bool hasShadow = true,
+}) {
+  return BoxDecoration(
+    color: color,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: kBlack.withOpacity(0.95), width: kBorderWidth),
+    boxShadow:
+        (hasShadow && !isPressed)
+            ? [
+              BoxShadow(
+                color: kBlack,
+                blurRadius: 0,
+                offset: Offset(kShadowOffset, kShadowOffset),
+              ),
+            ]
+            : [],
+  );
+}
+
+TextStyle get headerStyle => GoogleFonts.spaceMono(
+  fontSize: 18,
+  fontWeight: FontWeight.w700,
+  color: kBlack,
+  letterSpacing: -0.5,
+);
+
+TextStyle get bodyStyle => GoogleFonts.poppins(
+  fontSize: 14,
+  fontWeight: FontWeight.w500,
+  color: kBlack,
+);
+
+// ---------------------------------------------------------------------------
+// 4. HOME PAGE
+// ---------------------------------------------------------------------------
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
 
@@ -30,9 +168,9 @@ class _HomePageState extends State<HomePage> {
   List<UserLocation> _allUsers = [];
   String? _selectedUserId;
 
-  // Default camera position (centered on India)
+  // Default camera position
   static const CameraPosition _defaultPosition = CameraPosition(
-    target: LatLng(22.5937, 72.8203), // Near Charusat University
+    target: LatLng(22.5937, 72.8203),
     zoom: 15.0,
   );
 
@@ -40,6 +178,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _initializeApp();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showWelcomePopup();
+    });
   }
 
   Future<void> _initializeApp() async {
@@ -48,7 +189,58 @@ class _HomePageState extends State<HomePage> {
     _loadAllUsers();
   }
 
-  // Initialize location service
+  // Welcome Popup Logic
+  void _showWelcomePopup() {
+    final user = _authService.currentUser;
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: artistDecoration(color: kCardBg, radius: kRadius),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: kAccentBlue,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: kBlack, width: kBorderWidth),
+                    ),
+                    child: const Icon(
+                      Icons.waving_hand,
+                      size: 40,
+                      color: kBlack,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'HELLO, ${user?.displayName?.toUpperCase() ?? "FRIEND"}!',
+                    style: headerStyle.copyWith(fontSize: 20),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Location sharing is active. You can now see your family members on the map.',
+                    style: bodyStyle.copyWith(color: kBlack.withOpacity(0.7)),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  _ArtistButton(
+                    label: "LET'S GO",
+                    color: kAccentGreen,
+                    onTap: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
   Future<void> _initLocationService() async {
     try {
       bool serviceEnabled = await _location.serviceEnabled();
@@ -70,13 +262,11 @@ class _HomePageState extends State<HomePage> {
       }
 
       final locationData = await _location.getLocation();
-
       setState(() {
         _currentLocation = locationData;
         _isLoading = false;
       });
 
-      // Update current user's location in Firebase
       if (locationData.latitude != null && locationData.longitude != null) {
         await _locationService.updateCurrentUserLocation(
           locationData.latitude!,
@@ -84,10 +274,8 @@ class _HomePageState extends State<HomePage> {
         );
       }
 
-      // Listen to location changes
       _location.onLocationChanged.listen((newLocation) {
         setState(() => _currentLocation = newLocation);
-
         if (newLocation.latitude != null && newLocation.longitude != null) {
           _locationService.updateCurrentUserLocation(
             newLocation.latitude!,
@@ -101,34 +289,23 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // Load all users from Firebase
   void _loadAllUsers() {
-    _locationService.getAllLocations().listen(
-      (users) {
-        setState(() {
-          _allUsers = users;
-
-          // If no user is selected, select current user by default
-          if (_selectedUserId == null && _authService.currentUser != null) {
-            _selectedUserId = _authService.currentUser!.uid;
-            _showSelectedUserOnMap();
-          } else if (_selectedUserId != null) {
-            // Refresh marker if user is already selected
-            _showSelectedUserOnMap();
-          }
-        });
-      },
-      onError: (error) {
-        print('Error loading users: $error');
-      },
-    );
+    _locationService.getAllLocations().listen((users) {
+      setState(() {
+        _allUsers = users;
+        if (_selectedUserId == null && _authService.currentUser != null) {
+          _selectedUserId = _authService.currentUser!.uid;
+          _showSelectedUserOnMap();
+        } else if (_selectedUserId != null) {
+          _showSelectedUserOnMap();
+        }
+      });
+    }, onError: (error) => print('Error loading users: $error'));
   }
 
-  // Show selected user on map
   void _showSelectedUserOnMap() {
     if (_selectedUserId == null) return;
 
-    // Find the selected user in the list
     final selectedUser = _allUsers.firstWhere(
       (user) => user.userId == _selectedUserId,
       orElse:
@@ -142,44 +319,35 @@ class _HomePageState extends State<HomePage> {
           ),
     );
 
-    // If user not found or has invalid location, return
     if (selectedUser.userId.isEmpty ||
         selectedUser.latitude == 0 ||
-        selectedUser.longitude == 0) {
+        selectedUser.longitude == 0)
       return;
-    }
 
-    // Clear existing markers
     setState(() {
       _markers.clear();
-
-      // Add marker for selected user
       _markers.add(
         Marker(
           markerId: MarkerId(selectedUser.userId),
           position: LatLng(selectedUser.latitude, selectedUser.longitude),
           infoWindow: InfoWindow(
             title: selectedUser.displayName,
-            snippet:
-                'Last updated: ${_formatTimestamp(selectedUser.timestamp)}',
+            snippet: 'Last seen: ${_formatTimestamp(selectedUser.timestamp)}',
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(
             _selectedUserId == _authService.currentUser?.uid
-                ? BitmapDescriptor.hueBlue
-                : BitmapDescriptor.hueRed,
+                ? BitmapDescriptor.hueAzure
+                : BitmapDescriptor.hueRose,
           ),
         ),
       );
     });
 
-    // Move camera to selected user
     _moveCameraToUser(selectedUser);
   }
 
-  // Move camera to user location
   Future<void> _moveCameraToUser(UserLocation user) async {
     if (!_controller.isCompleted) return;
-
     final controller = await _controller.future;
     controller.animateCamera(
       CameraUpdate.newCameraPosition(
@@ -191,252 +359,202 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Format timestamp for display
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} min ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hours ago';
-    } else {
-      return '${difference.inDays} days ago';
-    }
+    final diff = now.difference(timestamp);
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = _authService.currentUser;
-
     return Scaffold(
+      backgroundColor: kBgColor,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('User Location Tracker'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        title: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: artistDecoration(color: kAccentYellow, radius: 20),
+          child: Text('KINSHIP_MAP', style: headerStyle.copyWith(fontSize: 16)),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await _locationService.clearUserLocation();
-              await _authService.signOut();
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginPage()),
-              );
-            },
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: _ArtistIconButton(
+              icon: Icons.logout_rounded,
+              color: kAccentOrange,
+              onTap: () async {
+                await _locationService.clearUserLocation();
+                await _authService.signOut();
+                if (!context.mounted) return;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                );
+              },
+            ),
           ),
         ],
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                children: [
-                  // Welcome Card Section
-                  Container(
-                    margin: const EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Colors.blue.shade400, Colors.blue.shade600],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blue.withOpacity(0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white.withOpacity(0.2),
-                                ),
-                                padding: const EdgeInsets.all(10),
-                                child: const Icon(
-                                  Icons.location_on,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Welcome ${user?.displayName ?? user?.email?.split('@')[0] ?? 'User'}',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Location Sharing Active',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.white.withOpacity(0.8),
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            child: Text(
-                              'Select a user from the dropdown below to view their real-time location on the map',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.white.withOpacity(0.85),
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+      body: Stack(
+        children: [
+          // 1. Full Screen Map
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator(color: kBlack))
+          else
+            GoogleMap(
+              mapType: MapType.normal,
+              initialCameraPosition: _defaultPosition,
+              style: _mapStyle, // APPLYING CUSTOM THEME HERE
+              onMapCreated: (GoogleMapController controller) {
+                _controller.complete(controller);
+                setState(() => _isMapCreated = true);
+                if (_selectedUserId != null) _showSelectedUserOnMap();
+              },
+              markers: _markers,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+            ),
 
-                  // User selection dropdown
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 8.0,
+          // 2. Bottom Control Panel
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 30,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ArtistFab(
+                      icon: Icons.refresh_rounded,
+                      color: kCardBg,
+                      onTap: () {
+                        if (_currentLocation != null) {
+                          _locationService.updateCurrentUserLocation(
+                            _currentLocation!.latitude!,
+                            _currentLocation!.longitude!,
+                          );
+                        }
+                        _loadAllUsers();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Map Refreshed',
+                              style: bodyStyle.copyWith(color: kCardBg),
+                            ),
+                            backgroundColor: kBlack,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            duration: const Duration(seconds: 1),
+                          ),
+                        );
+                      },
                     ),
-                    color: Colors.white,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Select a user:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
+                    const SizedBox(height: 12),
+                    _ArtistFab(
+                      icon: Icons.my_location_rounded,
+                      color: kAccentBlue,
+                      onTap: () {
+                        if (_authService.currentUser != null) {
+                          setState(
+                            () =>
+                                _selectedUserId = _authService.currentUser!.uid,
+                          );
+                          _showSelectedUserOnMap();
+                        }
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // User Selection Card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: artistDecoration(color: kCardBg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'TRACKING TARGET:',
+                        style: headerStyle.copyWith(
+                          fontSize: 12,
+                          color: Colors.grey,
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Custom Dropdown styling
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: kBlack, width: 2),
+                          borderRadius: BorderRadius.circular(kElementRadius),
+                        ),
+                        child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             isExpanded: true,
                             value: _selectedUserId,
-                            hint: const Text('Select a user'),
-                            underline: Container(),
+                            icon: const Icon(
+                              Icons.arrow_drop_down_circle_outlined,
+                              color: kBlack,
+                            ),
+                            hint: Text('Select User', style: bodyStyle),
                             items:
                                 _allUsers.map((user) {
                                   return DropdownMenuItem<String>(
                                     value: user.userId,
-                                    child: Text(
-                                      '${user.displayName} (${_formatTimestamp(user.timestamp)})',
-                                      overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.person,
+                                          size: 16,
+                                          color: kBlack.withOpacity(0.6),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            user.displayName,
+                                            style: bodyStyle.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Text(
+                                          _formatTimestamp(user.timestamp),
+                                          style: headerStyle.copyWith(
+                                            fontSize: 10,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   );
                                 }).toList(),
                             onChanged: (String? userId) {
-                              setState(() {
-                                _selectedUserId = userId;
-                              });
+                              setState(() => _selectedUserId = userId);
                               _showSelectedUserOnMap();
                             },
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-
-                  // Map section
-                  Expanded(
-                    child: GoogleMap(
-                      mapType: MapType.normal,
-                      initialCameraPosition: _defaultPosition,
-                      onMapCreated: (GoogleMapController controller) {
-                        _controller.complete(controller);
-                        setState(() {
-                          _isMapCreated = true;
-                        });
-
-                        // Show selected user if any
-                        if (_selectedUserId != null) {
-                          _showSelectedUserOnMap();
-                        }
-                      },
-                      markers: _markers,
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      zoomControlsEnabled: true,
-                    ),
-                  ),
-                ],
-              ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'refreshLocation',
-            onPressed: () {
-              // Refresh current user's location
-              if (_currentLocation != null) {
-                _locationService.updateCurrentUserLocation(
-                  _currentLocation!.latitude!,
-                  _currentLocation!.longitude!,
-                );
-              }
-
-              // Reload all users
-              _loadAllUsers();
-
-              // Show snackbar
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Locations refreshed'),
-                  duration: Duration(seconds: 2),
                 ),
-              );
-            },
-            child: const Icon(Icons.refresh),
-          ),
-          const SizedBox(height: 16),
-          FloatingActionButton(
-            heroTag: 'myLocation',
-            onPressed: () {
-              // Select current user
-              if (_authService.currentUser != null) {
-                setState(() {
-                  _selectedUserId = _authService.currentUser!.uid;
-                });
-                _showSelectedUserOnMap();
-              }
-            },
-            child: const Icon(Icons.my_location),
+              ],
+            ),
           ),
         ],
       ),
@@ -446,8 +564,88 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     if (_controller.isCompleted) {
-      _controller.future.then((controller) => controller.dispose());
+      _controller.future.then((c) => c.dispose());
     }
     super.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. CUSTOM COMPONENTS
+// ---------------------------------------------------------------------------
+
+class _ArtistIconButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ArtistIconButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: artistDecoration(color: color, radius: 12, hasShadow: true),
+        child: Icon(icon, color: kBlack, size: 20),
+      ),
+    );
+  }
+}
+
+class _ArtistFab extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ArtistFab({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        onTap();
+      },
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: artistDecoration(color: color, radius: 16, hasShadow: true),
+        child: Icon(icon, color: kBlack),
+      ),
+    );
+  }
+}
+
+class _ArtistButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _ArtistButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: artistDecoration(color: color, radius: kElementRadius),
+        child: Text(label, style: headerStyle.copyWith(fontSize: 16)),
+      ),
+    );
   }
 }

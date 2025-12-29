@@ -1,12 +1,73 @@
-// lib/screens/login_page.dart
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'package:flutter/services.dart';
+import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import 'register_page.dart';
 import 'home_page.dart';
+import 'design_system_page.dart';
 
+// ---------------------------------------------------------------------------
+// 1. THEME CONSTANTS
+// ---------------------------------------------------------------------------
+const Color kBgColor = Color(0xFFE0F7FA); // Soft Cyan
+const Color kCardBg = Color(0xFFFFFDE7); // Creamy Off-White
+const Color kAccentYellow = Color(0xFFFFD54F);
+const Color kAccentOrange = Color(0xFFFF8A80);
+const Color kAccentBlue = Color(0xFF80D8FF);
+const Color kAccentGreen = Color(0xFFB9F6CA);
+const Color kBlack = Color(0xFF212121);
+
+const double kBorderWidth = 3.0;
+const double kShadowOffset = 5.0;
+const double kRadius = 24.0;
+const double kElementRadius = 14.0;
+
+// ---------------------------------------------------------------------------
+// 2. STYLING HELPERS
+// ---------------------------------------------------------------------------
+BoxDecoration artistDecoration({
+  required Color color,
+  double radius = kRadius,
+  bool isPressed = false,
+  bool hasShadow = true,
+}) {
+  return BoxDecoration(
+    color: color,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: kBlack, width: kBorderWidth),
+    boxShadow:
+        (hasShadow && !isPressed)
+            ? [
+              BoxShadow(
+                color: kBlack,
+                blurRadius: 0,
+                offset: Offset(kShadowOffset, kShadowOffset),
+              ),
+            ]
+            : [],
+  );
+}
+
+// TYPOGRAPHY
+TextStyle get headerStyle => GoogleFonts.spaceMono(
+  fontSize: 20,
+  fontWeight: FontWeight.w700,
+  color: kBlack,
+  letterSpacing: -0.5,
+);
+
+TextStyle get bodyStyle => GoogleFonts.poppins(
+  fontSize: 14,
+  fontWeight: FontWeight.w500,
+  color: kBlack,
+);
+
+// ---------------------------------------------------------------------------
+// 3. LOGIN PAGE
+// ---------------------------------------------------------------------------
 class LoginPage extends StatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
 
@@ -14,718 +75,690 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
+
   bool _isLoading = false;
   bool _isGoogleSigningIn = false;
   bool _obscurePassword = true;
+  bool _showLoginForm = false; // Controls the Card View (Intro vs Login)
   String _appVersion = 'v1.0.0';
+
+  // Animation Controllers
+  late AnimationController _bgController;
 
   @override
   void initState() {
     super.initState();
     _loadAppVersion();
+    _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    )..repeat(reverse: true);
   }
 
   Future<void> _loadAppVersion() async {
     final packageInfo = await PackageInfo.fromPlatform();
-    setState(() {
-      _appVersion = 'v${packageInfo.version}';
-    });
+    setState(() => _appVersion = 'v${packageInfo.version}');
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _bgController.dispose();
     super.dispose();
   }
 
+  // --- Auth Logic ---
   Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
-
+      setState(() => _isLoading = true);
       try {
         await _authService.signInWithEmailPassword(
           _emailController.text.trim(),
           _passwordController.text.trim(),
         );
-
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
         );
       } on FirebaseAuthException catch (e) {
-        String errorMessage = 'An error occurred. Please try again.';
-
-        if (e.code == 'user-not-found') {
-          errorMessage = 'No user found with this email.';
-        } else if (e.code == 'wrong-password') {
-          errorMessage = 'Incorrect password.';
-        } else if (e.code == 'invalid-email') {
-          errorMessage = 'Invalid email format.';
-        } else if (e.code == 'too-many-requests') {
-          errorMessage = 'Too many login attempts. Please try later.';
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.red.shade400,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${e.toString()}'),
-              backgroundColor: Colors.red.shade400,
-            ),
-          );
-        }
+        _showSnack(e.message ?? 'Login failed', isError: true);
       } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        if (mounted) setState(() => _isLoading = false);
       }
     }
   }
 
   Future<void> _signInWithGoogle() async {
-    setState(() {
-      _isGoogleSigningIn = true;
-    });
-
+    setState(() => _isGoogleSigningIn = true);
     try {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signing in with Google...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-
-      final UserCredential? userCredential =
-          await _authService.signInWithGoogle();
-
+      final userCredential = await _authService.signInWithGoogle();
       if (userCredential != null && mounted) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
         );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Sign-in canceled'),
-            backgroundColor: Colors.orange.shade400,
-            duration: const Duration(seconds: 2),
-          ),
-        );
       }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        String errorMessage = 'Google Sign-In failed. Please try again.';
-
-        if (e.code == 'account-exists-with-different-credential') {
-          errorMessage = 'Account exists with different credentials.';
-        } else if (e.code == 'invalid-credential') {
-          errorMessage = 'Invalid credentials. Please try again.';
-        } else if (e.code == 'user-disabled') {
-          errorMessage = 'This account has been disabled.';
-        } else if (e.code == 'operation-not-allowed') {
-          errorMessage = 'Google Sign-In is not enabled.';
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red.shade400,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-      print('Firebase Auth Error: $e');
     } catch (e) {
-      if (mounted) {
-        String errorMessage = 'Google Sign-In error. Please check:';
-
-        if (e.toString().contains('Network')) {
-          errorMessage =
-              '❌ No internet connection. Please check your connection.';
-        } else if (e.toString().contains('PlatformException')) {
-          errorMessage =
-              '❌ Google Sign-In error. Try again or restart the app.';
-        } else if (e.toString().contains('PERMISSION_DENIED')) {
-          errorMessage = '❌ Permission denied. Check Google account settings.';
-        } else {
-          errorMessage = '❌ Sign-In failed: ${e.toString().split('\n').first}';
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red.shade400,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _signInWithGoogle,
-            ),
-          ),
-        );
-      }
-      print('Google Sign-In Error: $e');
+      _showSnack('Google Sign-In failed', isError: true);
     } finally {
-      if (mounted) {
-        setState(() {
-          _isGoogleSigningIn = false;
-        });
-      }
+      if (mounted) setState(() => _isGoogleSigningIn = false);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue.shade600, Colors.indigo.shade900],
+  // --- Forgot Password Logic ---
+  void _showForgotPasswordDialog() {
+    final TextEditingController resetEmailController = TextEditingController();
+    final resetFormKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: artistDecoration(color: kCardBg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('RESET PASSWORD', style: headerStyle),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Enter your email to receive a reset link.',
+                    style: bodyStyle.copyWith(
+                      fontSize: 13,
+                      color: kBlack.withOpacity(0.7),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Form(
+                    key: resetFormKey,
+                    child: _ArtistInputBlock(
+                      controller: resetEmailController,
+                      label: 'Email',
+                      hint: 'enter@email.com',
+                      icon: Icons.email_outlined,
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(
+                            'CANCEL',
+                            style: headerStyle.copyWith(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _Instant3DButton(
+                          label: 'SEND',
+                          color: kAccentBlue,
+                          onTap: () async {
+                            if (resetFormKey.currentState!.validate()) {
+                              Navigator.pop(context);
+                              try {
+                                await _authService.resetPassword(
+                                  resetEmailController.text.trim(),
+                                );
+                                _showSnack('Reset link sent!');
+                              } catch (e) {
+                                _showSnack('Error: $e', isError: true);
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+          style: bodyStyle.copyWith(
+            color: kCardBg,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24.0,
-                vertical: 16.0,
+        backgroundColor: kBlack,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Colors.white, width: 2),
+        ),
+      ),
+    );
+  }
+
+  // --- UI Structure ---
+  @override
+  Widget build(BuildContext context) {
+    // Determine screen height for responsive centering
+    final size = MediaQuery.of(context).size;
+
+    return Scaffold(
+      backgroundColor: kBgColor,
+      // Prevents resizing when keyboard opens to stop overflow
+      resizeToAvoidBottomInset: true,
+      body: Stack(
+        children: [
+          // 1. Creative Background
+          _MemphisBackground(controller: _bgController),
+
+          // 2. Version Tag (Fixed Top Right)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: artistDecoration(
+                    color: kAccentYellow,
+                    radius: 10,
+                  ),
+                  child: Text(
+                    _appVersion,
+                    style: headerStyle.copyWith(fontSize: 12),
+                  ),
+                ),
               ),
-              child: Form(
-                key: _formKey,
+            ),
+          ),
+
+          // 3. The Main "Master Card" Centerpiece
+          Center(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                width: size.width * 0.9, // 90% Width
+                constraints: const BoxConstraints(maxWidth: 400),
+                margin: const EdgeInsets.symmetric(vertical: 40),
+                decoration: artistDecoration(color: kCardBg, radius: kRadius),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min, // Hug content height
                   children: [
-                    // Version badge - Glass morphism
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Text(
-                              _appVersion,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
+                    // A. Card Header (Circles Removed)
+                    Container(
+                      height: 40,
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: kBlack,
+                            width: kBorderWidth,
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 60),
-
-                    // App icon - Glass morphism
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(30),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          height: 100,
-                          width: 100,
-                          margin: const EdgeInsets.only(bottom: 20),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.white.withOpacity(0.25),
-                                Colors.white.withOpacity(0.1),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                              width: 1.5,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment:
+                            MainAxisAlignment.end, // Align text to right
+                        children: [
+                          Text(
+                            'KINSHIP_SECURE_ACCESS',
+                            style: headerStyle.copyWith(
+                              fontSize: 10,
+                              color: Colors.black45,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.location_on,
-                            size: 50,
-                            color: Colors.white,
-                          ),
-                        ),
+                        ],
                       ),
                     ),
 
-                    // Welcome text
-                    const Text(
-                      'Welcome Back',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Sign in to your account',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 40),
-
-                    // Email field - Glass morphism
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Email Address',
-                            labelStyle: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w500,
+                    // B. Dynamic Content (Intro vs Login)
+                    AnimatedCrossFade(
+                      firstChild: _buildIntroCard(),
+                      secondChild: _buildLoginForm(),
+                      crossFadeState:
+                          _showLoginForm
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 400),
+                      firstCurve: Curves.easeInOutCubic,
+                      secondCurve: Curves.easeInOutCubic,
+                      layoutBuilder: (
+                        topChild,
+                        topChildKey,
+                        bottomChild,
+                        bottomChildKey,
+                      ) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: <Widget>[
+                            Positioned(
+                              key: bottomChildKey,
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: bottomChild,
                             ),
-                            hintText: 'you@example.com',
-                            hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.email_outlined,
-                              color: Colors.white70,
-                            ),
-                            filled: true,
-                            fillColor: Colors.white.withOpacity(0.1),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your email';
-                            }
-                            if (!RegExp(
-                              r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                            ).hasMatch(value)) {
-                              return 'Please enter a valid email';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Password field - Glass morphism
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: TextFormField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            labelStyle: const TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            hintText: '••••••••',
-                            hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.lock_outlined,
-                              color: Colors.white70,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                                color: Colors.white70,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
-                            ),
-                            filled: true,
-                            fillColor: Colors.white.withOpacity(0.1),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              borderSide: const BorderSide(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
-                            }
-                            if (value.length < 6) {
-                              return 'Password must be at least 6 characters';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Forgot password
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _showForgotPasswordDialog,
-                        child: const Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-
-                    // Login button - Glass morphism
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            backgroundColor: Colors.white.withOpacity(0.25),
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              side: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          child:
-                              _isLoading
-                                  ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : const Text(
-                                    'Sign In',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-
-                    // OR divider
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: 1,
-                            color: Colors.white.withOpacity(0.3),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            'OR',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            height: 1,
-                            color: Colors.white.withOpacity(0.3),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-
-                    // Google Sign-In button - Glass morphism
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: ElevatedButton.icon(
-                          onPressed:
-                              _isGoogleSigningIn ? null : _signInWithGoogle,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.white.withOpacity(0.15),
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(15),
-                              side: BorderSide(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                          icon:
-                              _isGoogleSigningIn
-                                  ? SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white.withOpacity(0.8),
-                                      ),
-                                    ),
-                                  )
-                                  : Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(3),
-                                      border: Border.all(
-                                        color: Colors.grey.shade400,
-                                        width: 0.5,
-                                      ),
-                                    ),
-                                    child: const Center(
-                                      child: Text(
-                                        'G',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                          label: const Text(
-                            'Sign in with Google',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Register link
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "Don't have an account? ",
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const RegisterPage(),
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Register',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
+                            Positioned(key: topChildKey, child: topChild),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  void _showForgotPasswordDialog() {
-    final TextEditingController emailController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+  // --- VIEW 1: INTRO CARD ---
+  Widget _buildIntroCard() {
+    return Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // Hug content
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Project Logo
+          Container(
+            height: 120,
+            width: 120,
+            decoration: artistDecoration(color: kAccentBlue, radius: 60),
+            child: const Icon(Icons.hub_rounded, size: 60, color: kBlack),
+          ),
+          const SizedBox(height: 32),
+          Text('KINSHIP', style: headerStyle.copyWith(fontSize: 32)),
+          const SizedBox(height: 12),
+          Text(
+            'Secure family location tracking & safety monitoring system.',
+            textAlign: TextAlign.center,
+            style: bodyStyle.copyWith(
+              color: kBlack.withOpacity(0.6),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 40),
+          _Instant3DButton(
+            label: 'GET STARTED',
+            color: kAccentOrange,
+            icon: Icons.arrow_forward_rounded,
+            onTap: () => setState(() => _showLoginForm = true),
+          ),
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed:
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const DesignSystemPage()),
+                ),
+            child: Text(
+              'View System Status',
+              style: headerStyle.copyWith(fontSize: 10, color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Text('Reset Password'),
-            content: Form(
-              key: formKey,
-              child: TextFormField(
-                controller: emailController,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'Enter your email address',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  prefixIcon: const Icon(Icons.email_outlined),
+  // --- VIEW 2: LOGIN FORM ---
+  Widget _buildLoginForm() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Hug content
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Back Button Row
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() => _showLoginForm = false),
+                  child: const Icon(Icons.arrow_back, color: kBlack),
                 ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value)) {
-                    return 'Please enter a valid email';
-                  }
-                  return null;
-                },
-              ),
+                const SizedBox(width: 12),
+                Text('User Login', style: headerStyle.copyWith(fontSize: 20)),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  if (formKey.currentState!.validate()) {
-                    try {
-                      await _authService.resetPassword(
-                        emailController.text.trim(),
-                      );
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text(
-                            '✓ Reset link sent to your email',
-                          ),
-                          backgroundColor: Colors.green.shade400,
-                        ),
-                      );
-                    } catch (e) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error: ${e.toString()}'),
-                          backgroundColor: Colors.red.shade400,
-                        ),
-                      );
-                    }
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade500,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+            const SizedBox(height: 24),
+
+            // Inputs
+            _ArtistInputBlock(
+              controller: _emailController,
+              label: 'Email',
+              hint: 'you@kinship.app',
+              icon: Icons.alternate_email,
+              validator: (v) => v!.isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 16),
+            _ArtistInputBlock(
+              controller: _passwordController,
+              label: 'Password',
+              hint: '••••••••',
+              icon: Icons.lock_outline,
+              isPassword: true,
+              obscureText: _obscurePassword,
+              onToggle:
+                  () => setState(() => _obscurePassword = !_obscurePassword),
+              validator: (v) => v!.length < 6 ? 'Min 6 chars' : null,
+            ),
+
+            // Forgot Password
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _showForgotPasswordDialog,
+                child: Text(
+                  'Forgot Password?',
+                  style: bodyStyle.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    decoration: TextDecoration.underline,
                   ),
                 ),
-                child: const Text(
-                  'Send Reset Link',
-                  style: TextStyle(color: Colors.white),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Actions
+            _Instant3DButton(
+              label: _isLoading ? 'CONNECTING...' : 'SIGN IN',
+              color: kAccentGreen,
+              onTap: _isLoading ? () {} : _login,
+            ),
+            const SizedBox(height: 16),
+            _Instant3DButton(
+              label: 'GOOGLE LOGIN',
+              color: Colors.white,
+              isGoogle: true,
+              onTap: _isGoogleSigningIn ? () {} : _signInWithGoogle,
+            ),
+
+            const SizedBox(height: 20),
+
+            // Register Link
+            Center(
+              child: GestureDetector(
+                onTap:
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const RegisterPage()),
+                    ),
+                child: RichText(
+                  text: TextSpan(
+                    style: bodyStyle.copyWith(fontSize: 13),
+                    children: [
+                      const TextSpan(text: "Not a member? "),
+                      TextSpan(
+                        text: "Register Now",
+                        style: bodyStyle.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: kAccentBlue,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. CUSTOM COMPONENTS
+// ---------------------------------------------------------------------------
+
+// A. INSTANT 3D BUTTON (10ms Response)
+class _Instant3DButton extends StatefulWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final bool isGoogle;
+
+  const _Instant3DButton({
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.icon,
+    this.isGoogle = false,
+  });
+
+  @override
+  State<_Instant3DButton> createState() => _Instant3DButtonState();
+}
+
+class _Instant3DButtonState extends State<_Instant3DButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) {
+        setState(() => _isPressed = true);
+        HapticFeedback.lightImpact();
+      },
+      onTapUp: (_) {
+        setState(() => _isPressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 10), // SUPER FAST
+        height: 56,
+        transform:
+            _isPressed
+                ? Matrix4.translationValues(kShadowOffset, kShadowOffset, 0)
+                : Matrix4.identity(),
+        decoration: artistDecoration(
+          color: widget.color,
+          radius: kElementRadius,
+          isPressed: _isPressed,
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.isGoogle)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: Image.asset('assets/google-icon.png', height: 24),
+                )
+              else if (widget.icon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: Icon(widget.icon, color: kBlack, size: 20),
+                ),
+              Text(widget.label, style: headerStyle.copyWith(fontSize: 16)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// B. ARTIST INPUT BLOCK (FIXED COLORS)
+class _ArtistInputBlock extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final IconData icon;
+  final bool isPassword;
+  final bool obscureText;
+  final VoidCallback? onToggle;
+  final String? Function(String?)? validator;
+
+  const _ArtistInputBlock({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    this.isPassword = false,
+    this.obscureText = false,
+    this.onToggle,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: bodyStyle.copyWith(fontWeight: FontWeight.w700, fontSize: 12),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          // Set color to White so it's not "blacked out"
+          decoration: artistDecoration(
+            color: Colors.white,
+            radius: kElementRadius,
+          ),
+          child: TextFormField(
+            controller: controller,
+            obscureText: obscureText,
+            validator: validator,
+            style: headerStyle.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+            cursorColor: kBlack,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              filled: false,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 14),
+              prefixIcon: IconTheme(
+                data: const IconThemeData(size: 22),
+                child: Icon(icon, color: kBlack),
+              ),
+              hintText: hint,
+              hintStyle: bodyStyle.copyWith(color: kBlack.withOpacity(0.4)),
+              suffixIcon:
+                  isPassword
+                      ? IconButton(
+                        icon: Icon(
+                          obscureText
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: kBlack,
+                          size: 20,
+                        ),
+                        onPressed: onToggle,
+                      )
+                      : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// C. DECORATIVE DOT (Removed from use, but kept in code if needed later)
+class _CircleDot extends StatelessWidget {
+  final Color color;
+  const _CircleDot({required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: kBlack, width: 2),
+      ),
+    );
+  }
+}
+
+// D. MEMPHIS BACKGROUND
+class _MemphisBackground extends StatelessWidget {
+  final AnimationController controller;
+  const _MemphisBackground({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            // Rotating Cross
+            Positioned(
+              top: 50,
+              left: -20,
+              child: Transform.rotate(
+                angle: controller.value * 2 * math.pi,
+                child: Icon(
+                  Icons.add,
+                  size: 140,
+                  color: kAccentBlue.withOpacity(0.15),
+                ),
+              ),
+            ),
+            // Floating Squiggle
+            Positioned(
+              bottom: 120 + (math.sin(controller.value * 2 * math.pi) * 30),
+              right: -30,
+              child: Icon(
+                Icons.waves,
+                size: 160,
+                color: kAccentOrange.withOpacity(0.15),
+              ),
+            ),
+            // Hollow Circle
+            Positioned(
+              top: 150 + (math.cos(controller.value * 2 * math.pi) * 20),
+              right: 20,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: kAccentGreen.withOpacity(0.2),
+                    width: 8,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
