@@ -1,3 +1,4 @@
+// lib/screens/home_page.dart
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:convert';
@@ -12,16 +13,11 @@ import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/friendship_service.dart';
 import '../services/location_sharing_service.dart';
-import '../models/user_location.dart';
+import '../theme/retro_theme.dart';
 import 'login_page.dart';
 import 'profile_screen.dart';
 import 'search_users_screen.dart';
 import 'pending_requests_screen.dart';
-
-// Widgets
-import '../widgets/glass_card.dart';
-import '../widgets/glass_icon_button.dart';
-import '../widgets/elevated_button.dart';
 
 // ---------------------------------------------------------------------------
 // 1. THEME CONSTANTS
@@ -149,11 +145,11 @@ class _HomePageState extends State<HomePage> {
 
   // Data
   final Map<String, BitmapDescriptor> _customIcons = {};
-  List<UserLocation> _allUsers = [];
-  List<String> _friendIds = [];
-  Map<String, Map<String, dynamic>> _friendsLocations = {};
-  StreamSubscription? _friendsLocationSubscription;
-  Timer? _markerUpdateTimer;
+
+  // Friends with locations
+  List<Map<String, dynamic>> _friendsWithLocations = [];
+  StreamSubscription? _friendsWithLocationsSubscription;
+
   bool _isPreloadingMarkers = false;
 
   @override
@@ -183,14 +179,11 @@ class _HomePageState extends State<HomePage> {
     // 2. Fetch Location BEFORE loading the map
     await _initLocationService();
 
-    // 3. Start sharing location with friends
+    // 3. Start sharing location
     _locationSharingService.startSharingLocation();
 
-    // 4. Load friends list and their locations
-    _loadFriends();
-
-    // 5. Start syncing other users
-    _loadAllUsers();
+    // 4. Load ONLY friends and their locations
+    _loadFriendsLogic();
   }
 
   Future<void> _initLocationService() async {
@@ -231,16 +224,6 @@ class _HomePageState extends State<HomePage> {
 
         setState(() => _currentLocation = newLocation);
 
-        // Live Camera Tracking (Optional: remove if you want free camera movement)
-        /* if (_controller.isCompleted && newLocation.latitude != null) {
-           _controller.future.then((c) {
-             c.animateCamera(CameraUpdate.newLatLng(
-               LatLng(newLocation.latitude!, newLocation.longitude!)
-             ));
-           });
-        }
-        */
-
         if (newLocation.latitude != null && newLocation.longitude != null) {
           _locationService.updateCurrentUserLocation(
             newLocation.latitude!,
@@ -257,50 +240,22 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _loadAllUsers() {
-    _locationService.getAllLocations().listen((users) {
-      if (!mounted) return;
-      setState(() {
-        _allUsers = users;
-      });
-      // Throttle marker updates
-      _markerUpdateTimer?.cancel();
-      _markerUpdateTimer = Timer(const Duration(milliseconds: 300), () {
-        if (mounted) _updateMarkers();
-      });
-    });
-  }
+  // CORE LOGIC: Listen to Friends with their locations in one stream
+  void _loadFriendsLogic() {
+    // Listen to friends with their locations directly from user document
+    _friendsWithLocationsSubscription = _locationSharingService
+        .getFriendsWithLocations()
+        .listen((friendsWithLocations) {
+          if (!mounted) return;
 
-  // Load friends and their locations
-  void _loadFriends() {
-    // Listen to friends list
-    _friendshipService.getFriendIds().listen((friendIds) {
-      if (!mounted) return;
-      setState(() {
-        _friendIds = friendIds;
-      });
-
-      // Cancel previous subscription
-      _friendsLocationSubscription?.cancel();
-
-      // Listen to friends' locations
-      if (friendIds.isNotEmpty) {
-        _friendsLocationSubscription = _locationSharingService
-            .getFriendsLocations(friendIds)
-            .listen((locations) {
-              if (!mounted) return;
-              setState(() {
-                _friendsLocations = locations;
-                _updateMarkers();
-              });
-            });
-      } else {
-        setState(() {
-          _friendsLocations = {};
-          _updateMarkers();
+          print(
+            '[HomePage] Received ${friendsWithLocations.length} friends with locations',
+          );
+          setState(() {
+            _friendsWithLocations = friendsWithLocations;
+            _updateMarkers();
+          });
         });
-      }
-    });
   }
 
   // --- MARKER LOGIC ---
@@ -309,92 +264,66 @@ class _HomePageState extends State<HomePage> {
     if (_isPreloadingMarkers) return;
 
     final String? myUserId = _authService.currentUser?.uid;
-    // We only care about MY location based on your request
     if (myUserId == null) return;
 
     final Set<Marker> newMarkers = {};
 
-    // 1. Prioritize Realtime Local Data for smoothness
-    // If we have _currentLocation, use that instead of waiting for the DB roundtrip
-    double lat, lng;
-    DateTime time;
-
+    // 1. Add MY Location Marker
     if (_currentLocation != null && _currentLocation!.latitude != null) {
-      lat = _currentLocation!.latitude!;
-      lng = _currentLocation!.longitude!;
-      time = DateTime.now();
-    } else {
-      // Fallback to DB data
-      try {
-        final myUser = _allUsers.firstWhere((u) => u.userId == myUserId);
-        lat = myUser.latitude;
-        lng = myUser.longitude;
-        time = myUser.timestamp;
-      } catch (e) {
-        return; // No location data yet
+      final String iconKey = 'Me';
+      if (!_customIcons.containsKey(iconKey)) {
+        final myProfile = await _getUserProfile(myUserId);
+        final myPhoto = myProfile?['photoURL'] as String?;
+        final icon = await _createPhotoMarker(myPhoto, 'Me');
+        _customIcons[iconKey] = icon;
       }
-    }
 
-    final String iconKey = 'Me';
-    if (!_customIcons.containsKey(iconKey)) {
-      final myProfile = await _getUserProfile(myUserId);
-      final myPhoto = myProfile?['photoURL'] as String?;
-      final icon = await _createPhotoMarker(myPhoto, 'Me');
-      _customIcons[iconKey] = icon;
-    }
-
-    newMarkers.add(
-      Marker(
-        markerId: MarkerId(myUserId),
-        position: LatLng(lat, lng),
-        icon: _customIcons[iconKey] ?? _customIcons['default']!,
-        infoWindow: InfoWindow(
-          title: "My Location",
-          snippet: _formatTimestamp(time),
-        ),
-        anchor: const Offset(0.5, 0.8),
-      ),
-    );
-
-    // 2. Add markers for friends
-    for (final entry in _friendsLocations.entries) {
-      final friendId = entry.key;
-      final locationData = entry.value;
-
-      final friendLat = locationData['latitude'] as double?;
-      final friendLng = locationData['longitude'] as double?;
-
-      if (friendLat != null && friendLng != null) {
-        // Get friend profile to get name and photo
-        final friendProfile = await _getFriendProfile(friendId);
-        final friendName =
-            friendProfile['displayName'] ??
-            friendProfile['username'] ??
-            'Friend';
-        final friendPhoto = friendProfile['photoURL'] as String?;
-
-        final friendIconKey = 'friend_$friendId';
-        if (!_customIcons.containsKey(friendIconKey)) {
-          final icon = await _createPhotoMarker(friendPhoto, friendName);
-          _customIcons[friendIconKey] = icon;
-        }
-
-        final timestamp = locationData['timestamp'] as Timestamp?;
-        final friendTime = timestamp?.toDate() ?? DateTime.now();
-
-        newMarkers.add(
-          Marker(
-            markerId: MarkerId(friendId),
-            position: LatLng(friendLat, friendLng),
-            icon: _customIcons[friendIconKey] ?? _customIcons['default']!,
-            infoWindow: InfoWindow(
-              title: friendName,
-              snippet: _formatTimestamp(friendTime),
-            ),
-            anchor: const Offset(0.5, 0.8),
+      newMarkers.add(
+        Marker(
+          markerId: MarkerId(myUserId),
+          position: LatLng(
+            _currentLocation!.latitude!,
+            _currentLocation!.longitude!,
           ),
-        );
+          icon: _customIcons[iconKey] ?? _customIcons['default']!,
+          infoWindow: const InfoWindow(title: "My Location"),
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 2, // Draw on top
+        ),
+      );
+    }
+
+    // 2. Add Markers for FRIENDS
+    for (final friendData in _friendsWithLocations) {
+      final userId = friendData['userId'] as String;
+      final latitude = friendData['latitude'] as double;
+      final longitude = friendData['longitude'] as double;
+      final displayName = friendData['displayName'] as String?;
+      final username = friendData['username'] as String?;
+      final photoURL = friendData['photoURL'] as String?;
+      final locationTimestamp = friendData['locationTimestamp'] as DateTime;
+
+      final userName = displayName ?? username ?? 'Friend';
+
+      // Prepare Icon
+      final userIconKey = 'user_$userId';
+      if (!_customIcons.containsKey(userIconKey)) {
+        final icon = await _createPhotoMarker(photoURL, userName);
+        _customIcons[userIconKey] = icon;
       }
+
+      newMarkers.add(
+        Marker(
+          markerId: MarkerId(userId),
+          position: LatLng(latitude, longitude),
+          icon: _customIcons[userIconKey] ?? _customIcons['default']!,
+          infoWindow: InfoWindow(
+            title: userName,
+            snippet: _formatTimestamp(locationTimestamp),
+          ),
+          anchor: const Offset(0.5, 0.5),
+        ),
+      );
     }
 
     if (mounted) {
@@ -403,11 +332,6 @@ class _HomePageState extends State<HomePage> {
         _markers.addAll(newMarkers);
       });
     }
-  }
-
-  // Helper to get friend profile data
-  Future<Map<String, dynamic>> _getFriendProfile(String userId) async {
-    return await _getUserProfile(userId) ?? {};
   }
 
   // Helper to get user profile data
@@ -422,84 +346,6 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       return {};
     }
-  }
-
-  // 3. MODERN SIMPLE 3D MARKER ("The Floating Puck")
-  Future<BitmapDescriptor> _createModern3DMarker(String name) async {
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder);
-    const double size = 120.0;
-
-    // A. Soft Drop Shadow
-    final Paint shadowPaint =
-        Paint()
-          ..color = Colors.black.withOpacity(0.4)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-    canvas.drawOval(
-      Rect.fromLTWH(size * 0.25, size * 0.75, size * 0.5, size * 0.15),
-      shadowPaint,
-    );
-
-    // B. Main Body
-    final Paint basePaint = Paint()..color = Colors.white;
-    final Offset center = Offset(size / 2, size * 0.45);
-    final double radius = size * 0.35;
-    canvas.drawCircle(center, radius, basePaint);
-
-    // Gradient
-    final Paint innerPaint =
-        Paint()
-          ..shader = ui.Gradient.linear(
-            Offset(center.dx, center.dy - radius),
-            Offset(center.dx, center.dy + radius),
-            [kAccentPulse, kAccentBlue],
-          );
-    canvas.drawCircle(center, radius * 0.85, innerPaint);
-
-    // Shine
-    final Paint shinePaint =
-        Paint()
-          ..color = Colors.white.withOpacity(0.3)
-          ..style = PaintingStyle.fill;
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(center.dx, center.dy - radius * 0.4),
-        width: radius * 1.0,
-        height: radius * 0.6,
-      ),
-      shinePaint,
-    );
-
-    // Text
-    final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    final TextPainter textPainter = TextPainter(
-      text: TextSpan(
-        text: initial,
-        style: GoogleFonts.dmSans(
-          fontSize: 32,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        center.dx - (textPainter.width / 2),
-        center.dy - (textPainter.height / 2),
-      ),
-    );
-
-    final ui.Image image = await pictureRecorder.endRecording().toImage(
-      size.toInt(),
-      size.toInt(),
-    );
-    final ByteData? byteData = await image.toByteData(
-      format: ui.ImageByteFormat.png,
-    );
-    return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
   }
 
   // Create marker with profile photo
@@ -537,14 +383,12 @@ class _HomePageState extends State<HomePage> {
     if (photoURL != null && photoURL.isNotEmpty) {
       try {
         if (photoURL.startsWith('data:image')) {
-          // Base64 image
           final base64String = photoURL.split(',')[1];
           final Uint8List bytes = base64Decode(base64String);
           final ui.Codec codec = await ui.instantiateImageCodec(bytes);
           final ui.FrameInfo frameInfo = await codec.getNextFrame();
           final ui.Image photoImage = frameInfo.image;
 
-          // Draw image
           final srcRect = Rect.fromLTWH(
             0,
             0,
@@ -554,15 +398,12 @@ class _HomePageState extends State<HomePage> {
           final dstRect = Rect.fromCircle(center: center, radius: radius * 0.9);
           canvas.drawImageRect(photoImage, srcRect, dstRect, Paint());
         } else {
-          // Fallback to initial
           _drawInitial(canvas, center, radius, fallbackName);
         }
       } catch (e) {
-        // Fallback to initial
         _drawInitial(canvas, center, radius, fallbackName);
       }
     } else {
-      // No photo, draw initial
       _drawInitial(canvas, center, radius, fallbackName);
     }
 
@@ -571,7 +412,7 @@ class _HomePageState extends State<HomePage> {
     // Add blue ring
     final Paint ringPaint =
         Paint()
-          ..color = kAccentBlue
+          ..color = RetroTheme.primary
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3.0;
     canvas.drawCircle(center, radius * 0.9, ringPaint);
@@ -587,22 +428,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _drawInitial(Canvas canvas, Offset center, double radius, String name) {
-    // Gradient background
     final Paint bgPaint =
         Paint()
           ..shader = ui.Gradient.linear(
             Offset(center.dx, center.dy - radius),
             Offset(center.dx, center.dy + radius),
-            [kAccentPulse, kAccentBlue],
+            [RetroTheme.accent, RetroTheme.primary],
           );
     canvas.drawCircle(center, radius * 0.9, bgPaint);
 
-    // Initial text
     final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final TextPainter textPainter = TextPainter(
       text: TextSpan(
         text: initial,
-        style: GoogleFonts.dmSans(
+        style: RetroTheme.bodyLarge.copyWith(
           fontSize: 32,
           fontWeight: FontWeight.w900,
           color: Colors.white,
@@ -638,55 +477,92 @@ class _HomePageState extends State<HomePage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           insetPadding: const EdgeInsets.all(24),
-          child: GlassCard(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'MAP STYLE',
-                  style: GoogleFonts.spaceMono(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: kPrimaryDark.withOpacity(0.6),
-                    letterSpacing: 1.5,
+                  'Map Style',
+                  style: RetroTheme.bodyLarge.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: RetroTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
-                      child: KinshipElevatedButton(
-                        label: 'Satellite',
-                        icon: Icons.satellite_alt_rounded,
-                        color:
-                            _currentMapType == MapType.hybrid
-                                ? kAccentBlue
-                                : Colors.white,
-                        textColor:
-                            _currentMapType == MapType.hybrid
-                                ? Colors.white
-                                : kPrimaryDark,
-                        onTap: () {
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.satellite_alt_rounded, size: 18),
+                        label: const Text('Satellite'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _currentMapType == MapType.hybrid
+                                  ? RetroTheme.primary
+                                  : Colors.white,
+                          foregroundColor:
+                              _currentMapType == MapType.hybrid
+                                  ? Colors.white
+                                  : RetroTheme.textPrimary,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color:
+                                  _currentMapType == MapType.hybrid
+                                      ? Colors.transparent
+                                      : Colors.grey.shade300,
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () {
                           setState(() => _currentMapType = MapType.hybrid);
                           Navigator.pop(context);
                         },
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: KinshipElevatedButton(
-                        label: 'Simple',
-                        icon: Icons.map_outlined,
-                        color:
-                            _currentMapType == MapType.normal
-                                ? kAccentBlue
-                                : Colors.white,
-                        textColor:
-                            _currentMapType == MapType.normal
-                                ? Colors.white
-                                : kPrimaryDark,
-                        onTap: () {
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.map_outlined, size: 18),
+                        label: const Text('Simple'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _currentMapType == MapType.normal
+                                  ? RetroTheme.primary
+                                  : Colors.white,
+                          foregroundColor:
+                              _currentMapType == MapType.normal
+                                  ? Colors.white
+                                  : RetroTheme.textPrimary,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color:
+                                  _currentMapType == MapType.normal
+                                      ? Colors.transparent
+                                      : Colors.grey.shade300,
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () {
                           setState(() => _currentMapType = MapType.normal);
                           Navigator.pop(context);
                         },
@@ -694,29 +570,43 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                KinshipElevatedButton(
-                  label: _isLoading ? 'LOGGING OUT...' : 'LOGOUT SECURELY',
-                  color: Colors.red,
-                  textColor: Colors.white,
-                  onTap: () async {
-                    if (_isLoading) return;
-                    try {
-                      setState(() => _isLoading = true);
-                      await _locationService.clearUserLocation();
-                      await _authService.signOut();
-                      if (!context.mounted) return;
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginPage(),
-                        ),
-                      );
-                    } catch (e) {
-                      debugPrint('Logout error: $e');
-                      if (mounted) setState(() => _isLoading = false);
-                    }
-                  },
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      if (_isLoading) return;
+                      try {
+                        setState(() => _isLoading = true);
+                        await _locationService.clearUserLocation();
+                        await _authService.signOut();
+                        if (!context.mounted) return;
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginPage(),
+                          ),
+                        );
+                      } catch (e) {
+                        if (mounted) setState(() => _isLoading = false);
+                      }
+                    },
+                    child: Text(
+                      _isLoading ? 'Logging out...' : 'Logout',
+                      style: RetroTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -745,27 +635,25 @@ class _HomePageState extends State<HomePage> {
       body: Stack(
         children: [
           // 1. THE MAP
-          // Logic: Only show map if location is ready. Otherwise show Loading.
           _isLocationReady
               ? GoogleMap(
                 mapType: _currentMapType,
                 style:
                     _currentMapType == MapType.normal ? _simpleMapStyle : null,
-                // IMPORTANT: Initialize DIRECTLY at user location
                 initialCameraPosition: CameraPosition(
                   target: LatLng(
                     _currentLocation?.latitude ?? 20.5937,
                     _currentLocation?.longitude ?? 78.9629,
                   ),
-                  zoom: 18.5, // Street Level
-                  tilt: 60.0, // 3D View
+                  zoom: 18.5,
+                  tilt: 60.0,
                   bearing: 0.0,
                 ),
                 markers: _markers,
                 buildingsEnabled: true,
                 trafficEnabled: false,
                 indoorViewEnabled: false,
-                myLocationEnabled: true,
+                myLocationEnabled: false, // We use custom marker
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: false,
                 compassEnabled: false,
@@ -782,11 +670,11 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const CircularProgressIndicator(color: kAccentPulse),
+                      const CircularProgressIndicator(color: RetroTheme.accent),
                       const SizedBox(height: 20),
                       Text(
                         "SECURING CONNECTION...",
-                        style: GoogleFonts.spaceMono(
+                        style: RetroTheme.bodyLarge.copyWith(
                           color: Colors.white,
                           fontSize: 12,
                           letterSpacing: 2.0,
@@ -890,7 +778,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             child: Text(
                               count > 9 ? '9+' : count.toString(),
-                              style: GoogleFonts.poppins(
+                              style: RetroTheme.bodyLarge.copyWith(
                                 color: Colors.white,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
@@ -947,19 +835,37 @@ class _HomePageState extends State<HomePage> {
             Positioned(
               top: 50,
               right: 20,
-              child: GlassIconButton(
-                icon: Icons.layers_rounded,
-                onTap: _showMapLayerPopup,
+              child: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.layers_rounded,
+                    color: RetroTheme.primary,
+                  ),
+                  onPressed: _showMapLayerPopup,
+                ),
               ),
             ),
 
-          // 5. Fullscreen Loading Overlay (For Logout actions)
+          // 6. LOADING OVERLAY
           if (_isLoading)
             Positioned.fill(
               child: Container(
                 color: Colors.black.withOpacity(0.5),
                 child: const Center(
-                  child: CircularProgressIndicator(color: kAccentBlue),
+                  child: CircularProgressIndicator(color: RetroTheme.primary),
                 ),
               ),
             ),
@@ -970,8 +876,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _markerUpdateTimer?.cancel();
-    _friendsLocationSubscription?.cancel();
+    _friendsWithLocationsSubscription?.cancel();
     _locationSharingService.dispose();
     if (_controller.isCompleted) {
       _controller.future.then((c) => c.dispose());

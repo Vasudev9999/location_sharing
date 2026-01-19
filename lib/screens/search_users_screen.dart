@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../services/profile_service.dart';
 import '../services/friendship_service.dart';
-import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../theme/retro_theme.dart';
 
 class SearchUsersScreen extends StatefulWidget {
   const SearchUsersScreen({Key? key}) : super(key: key);
@@ -27,10 +27,11 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
   bool _isSearching = false;
   bool _hasSearched = false;
   bool _isLoadingFriends = true;
-  Map<String, String> _connectionStatus =
-      {}; // userId -> status (friends/sent/received/none)
-  Map<String, bool> _loadingStatus = {}; // userId -> loading state
   Timer? _debounceTimer;
+
+  // We cache status locally to update UI instantly without re-fetching everything constantly
+  // Key: UserId, Value: 'friends', 'sent', 'received', 'none'
+  final Map<String, String> _localStatusCache = {};
 
   @override
   void initState() {
@@ -52,24 +53,19 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
         setState(() {
           _friendsList = friends;
           _isLoadingFriends = false;
-          // Mark all as friends
-          for (final friend in friends) {
-            _connectionStatus[friend.userId] = 'friends';
+          for (var f in friends) {
+            _localStatusCache[f.userId] = 'friends';
           }
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingFriends = false;
-        });
-      }
+      if (mounted) setState(() => _isLoadingFriends = false);
     }
   }
 
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       _performSearch(query);
     });
   }
@@ -90,6 +86,19 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
 
     try {
       final results = await _profileService.searchUsersByUsername(query.trim());
+
+      // Pre-fetch status for results to avoid popping UI
+      for (var user in results) {
+        if (!_localStatusCache.containsKey(user.userId)) {
+          // Async check in background, will update UI when done
+          _friendshipService.getConnectionStatus(user.userId).then((status) {
+            if (mounted) {
+              setState(() => _localStatusCache[user.userId] = status);
+            }
+          });
+        }
+      }
+
       if (mounted) {
         setState(() {
           _searchResults = results;
@@ -102,14 +111,23 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
           _isSearching = false;
           _searchResults = [];
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Search failed: $e', style: GoogleFonts.poppins()),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
+  }
+
+  // Called when returning from modal or needing a refresh
+  void _updateUserStatus(String userId, String newStatus) {
+    setState(() {
+      _localStatusCache[userId] = newStatus;
+      if (newStatus == 'friends') {
+        // We reload friends list if a new friend is added
+        _loadFriends();
+      } else if (newStatus == 'none' &&
+          _friendsList.any((f) => f.userId == userId)) {
+        // Remove from local friends list if removed
+        _friendsList.removeWhere((f) => f.userId == userId);
+      }
+    });
   }
 
   @override
@@ -125,7 +143,7 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
         ),
         title: Text(
           'Search Users',
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             color: Colors.black,
             fontWeight: FontWeight.w600,
             fontSize: 20,
@@ -143,7 +161,9 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Search by username...',
-                hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+                hintStyle: RetroTheme.bodyLarge.copyWith(
+                  color: Colors.grey[400],
+                ),
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF2962FF)),
                 suffixIcon:
                     _searchController.text.isNotEmpty
@@ -161,34 +181,33 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF2962FF),
-                    width: 2,
-                  ),
-                ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
               ),
-              style: GoogleFonts.poppins(fontSize: 16),
+              style: RetroTheme.bodyLarge.copyWith(fontSize: 16),
             ),
           ),
 
-          // Results
+          // Content
           Expanded(
             child:
                 _isSearching
                     ? const Center(child: CircularProgressIndicator())
                     : _hasSearched
-                    ? (_searchResults.isEmpty
+                    ? _searchResults.isEmpty
                         ? _buildEmptyState()
-                        : _buildSearchResults())
-                    : (_isLoadingFriends
-                        ? const Center(child: CircularProgressIndicator())
-                        : _buildFriendsList()),
+                        : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _searchResults.length,
+                          itemBuilder:
+                              (context, index) =>
+                                  _buildUserCard(_searchResults[index]),
+                        )
+                    : _isLoadingFriends
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildFriendsList(),
           ),
         ],
       ),
@@ -196,31 +215,6 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
   }
 
   Widget _buildEmptyState() {
-    if (!_hasSearched) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              'Search for users',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Enter a username to find people',
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-            ),
-          ],
-        ),
-      );
-    }
-
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -229,30 +223,13 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
           const SizedBox(height: 16),
           Text(
             'No users found',
-            style: GoogleFonts.poppins(
+            style: RetroTheme.bodyLarge.copyWith(
               fontSize: 18,
-              fontWeight: FontWeight.w600,
               color: Colors.grey[600],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Try a different username',
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSearchResults() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _searchResults.length,
-      itemBuilder: (context, index) {
-        final user = _searchResults[index];
-        return _buildUserCard(user);
-      },
     );
   }
 
@@ -266,16 +243,11 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
             const SizedBox(height: 16),
             Text(
               'No Friends Yet',
-              style: GoogleFonts.poppins(
+              style: RetroTheme.bodyLarge.copyWith(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: Colors.grey[600],
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Search and connect with people',
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
             ),
           ],
         ),
@@ -289,7 +261,7 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Text(
             'Your Network (${_friendsList.length})',
-            style: GoogleFonts.poppins(
+            style: RetroTheme.bodyLarge.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: Colors.black87,
@@ -300,10 +272,8 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             itemCount: _friendsList.length,
-            itemBuilder: (context, index) {
-              final user = _friendsList[index];
-              return _buildUserCard(user);
-            },
+            itemBuilder:
+                (context, index) => _buildUserCard(_friendsList[index]),
           ),
         ),
       ],
@@ -311,6 +281,12 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
   }
 
   Widget _buildUserCard(UserProfile user) {
+    final isMe = user.userId == FirebaseAuth.instance.currentUser?.uid;
+    // Default to 'none' if not cached yet, unless it's in friends list
+    String status =
+        _localStatusCache[user.userId] ??
+        (_friendsList.any((f) => f.userId == user.userId) ? 'friends' : 'none');
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -331,12 +307,13 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
           backgroundColor: const Color(0xFF2962FF),
           backgroundImage: _getProfileImage(user.photoURL),
           child:
-              user.photoURL == null || user.photoURL!.isEmpty
+              user.photoURL?.isEmpty ?? true
                   ? Text(
-                    user.displayName?.isNotEmpty == true
-                        ? user.displayName![0].toUpperCase()
-                        : user.username[0].toUpperCase(),
-                    style: GoogleFonts.poppins(
+                    (user.displayName?.isNotEmpty == true
+                            ? user.displayName!
+                            : user.username)[0]
+                        .toUpperCase(),
+                    style: RetroTheme.bodyLarge.copyWith(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
@@ -346,7 +323,7 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
         ),
         title: Text(
           user.displayName ?? user.username,
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Colors.black87,
@@ -354,529 +331,362 @@ class _SearchUsersScreenState extends State<SearchUsersScreen> {
         ),
         subtitle: Text(
           '@${user.username}',
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+          style: RetroTheme.bodyLarge.copyWith(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
         ),
-        onTap: () {
-          // Show user details dialog
-          _showUserDetailsDialog(user);
+        trailing: isMe ? null : _buildMiniStatusIcon(status),
+        onTap: () async {
+          // Open the Dedicated Stateful Modal
+          final result = await showDialog<String>(
+            context: context,
+            builder:
+                (context) => UserProfileDialog(
+                  user: user,
+                  initialStatus: status,
+                  friendshipService: _friendshipService,
+                ),
+          );
+
+          // Update local state if the modal action changed the status
+          if (result != null && result != status) {
+            _updateUserStatus(user.userId, result);
+          }
         },
       ),
     );
   }
 
-  void _showUserDetailsDialog(UserProfile user) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundColor: const Color(0xFF2962FF),
-                    backgroundImage: _getProfileImage(user.photoURL),
-                    child:
-                        user.photoURL == null || user.photoURL!.isEmpty
-                            ? Text(
-                              user.displayName?.isNotEmpty == true
-                                  ? user.displayName![0].toUpperCase()
-                                  : user.username[0].toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            )
-                            : null,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    user.displayName ?? user.username,
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '@${user.username}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildModalActionButtons(user),
-                ],
-              ),
-            ),
-          ),
-    );
+  Widget _buildMiniStatusIcon(String status) {
+    switch (status) {
+      case 'friends':
+        return const Icon(Icons.check_circle, color: Colors.green, size: 20);
+      case 'sent':
+        return const Icon(
+          Icons.access_time_filled,
+          color: Colors.grey,
+          size: 20,
+        );
+      case 'received':
+        return const Icon(
+          Icons.mark_email_unread,
+          color: Color(0xFF2962FF),
+          size: 20,
+        );
+      default:
+        return const Icon(Icons.person_add, color: Colors.grey, size: 20);
+    }
   }
 
-  // Helper method to get profile photo widget
   ImageProvider? _getProfileImage(String? photoURL) {
-    if (photoURL == null || photoURL.isEmpty) {
-      return null;
-    }
-
-    // Check if it's a base64 encoded image
+    if (photoURL == null || photoURL.isEmpty) return null;
     if (photoURL.startsWith('data:image')) {
       try {
         final base64String = photoURL.split(',')[1];
-        final Uint8List bytes = base64Decode(base64String);
-        return MemoryImage(bytes);
+        return MemoryImage(base64Decode(base64String));
       } catch (e) {
         return null;
       }
     }
-
-    // Otherwise, treat it as a network URL
     return NetworkImage(photoURL);
   }
+}
 
-  // Build modal action buttons
-  Widget _buildModalActionButtons(UserProfile user) {
-    // Don't show buttons for current user
-    if (user.userId == FirebaseAuth.instance.currentUser?.uid) {
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2962FF),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-          child: Text(
-            'Close',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      );
+// ==========================================
+// DEDICATED STATEFUL DIALOG WIDGET
+// ==========================================
+
+class UserProfileDialog extends StatefulWidget {
+  final UserProfile user;
+  final String initialStatus;
+  final FriendshipService friendshipService;
+
+  const UserProfileDialog({
+    Key? key,
+    required this.user,
+    required this.initialStatus,
+    required this.friendshipService,
+  }) : super(key: key);
+
+  @override
+  State<UserProfileDialog> createState() => _UserProfileDialogState();
+}
+
+class _UserProfileDialogState extends State<UserProfileDialog> {
+  late String _currentStatus;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentStatus = widget.initialStatus;
+    _refreshRealStatus();
+  }
+
+  // Double check status from server to ensure fresh data
+  Future<void> _refreshRealStatus() async {
+    // If it was 'none', it might actually be something else, so we check.
+    // If it was 'friends', we assume it's correct for UI speed, but verify anyway.
+    final realStatus = await widget.friendshipService.getConnectionStatus(
+      widget.user.userId,
+    );
+    if (mounted && realStatus != _currentStatus) {
+      setState(() {
+        _currentStatus = realStatus;
+      });
     }
+  }
 
-    final status = _connectionStatus[user.userId] ?? 'loading';
-    final isLoading = _loadingStatus[user.userId] ?? false;
-
-    if (status == 'loading') {
-      _checkConnectionStatus(user.userId);
+  Future<void> _handleAction(Function action) async {
+    setState(() => _isLoading = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
 
-    return Column(
-      children: [
-        if (status == 'friends')
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isLoading ? null : () => _removeFriend(user),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
+  @override
+  Widget build(BuildContext context) {
+    final isMe = widget.user.userId == FirebaseAuth.instance.currentUser?.uid;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Profile Pic
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: const Color(0xFF2962FF),
+              backgroundImage: _getProfileImage(widget.user.photoURL),
               child:
-                  isLoading
-                      ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                      : Text(
-                        'Remove from Network',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
+                  widget.user.photoURL?.isEmpty ?? true
+                      ? Text(
+                        (widget.user.displayName ?? widget.user.username)[0]
+                            .toUpperCase(),
+                        style: RetroTheme.bodyLarge.copyWith(
+                          fontSize: 36,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
                         ),
-                      ),
-            ),
-          )
-        else if (status == 'sent')
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: null,
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.grey),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text(
-                'Request Sent',
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-          )
-        else if (status == 'received')
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isLoading ? null : () => _acceptRequest(user),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2962FF),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child:
-                  isLoading
-                      ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
                       )
-                      : Text(
-                        'Accept Request',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
+                      : null,
             ),
-          )
-        else
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isLoading ? null : () => _sendRequest(user),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2962FF),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child:
-                  isLoading
-                      ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                      : Text(
-                        'Add to Network',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-            ),
-          ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Close',
-              style: GoogleFonts.poppins(
-                fontSize: 16,
+            const SizedBox(height: 16),
+            // Name
+            Text(
+              widget.user.displayName ?? widget.user.username,
+              style: RetroTheme.bodyLarge.copyWith(
+                fontSize: 20,
                 fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 4),
+            // Handle
+            Text(
+              '@${widget.user.username}',
+              style: RetroTheme.bodyLarge.copyWith(
+                fontSize: 16,
                 color: Colors.grey[600],
               ),
             ),
-          ),
+            const SizedBox(height: 24),
+
+            // ACTIONS
+            if (isMe) _buildCloseButton() else _buildActionButtons(),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  // Check connection status for user
-  Future<void> _checkConnectionStatus(String userId) async {
-    if (_connectionStatus.containsKey(userId)) return;
-
-    final isFriend = await _friendshipService.checkIfFriends(userId);
-    if (isFriend) {
-      setState(() {
-        _connectionStatus[userId] = 'friends';
-      });
-      return;
+  Widget _buildActionButtons() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
     }
 
-    final pendingStatus = await _friendshipService.checkPendingRequest(userId);
-    setState(() {
-      _connectionStatus[userId] = pendingStatus ?? 'none';
-    });
-  }
-
-  // Build connection button based on status
-  Widget _buildConnectionButton(UserProfile user) {
-    // Don't show button for current user
-    if (user.userId == FirebaseAuth.instance.currentUser?.uid) {
-      return const SizedBox.shrink();
-    }
-
-    final status = _connectionStatus[user.userId] ?? 'loading';
-    final isLoading = _loadingStatus[user.userId] ?? false;
-
-    if (status == 'loading') {
-      _checkConnectionStatus(user.userId);
-      return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-
-    if (isLoading) {
-      return const SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-
-    switch (status) {
+    switch (_currentStatus) {
       case 'friends':
-        return IconButton(
-          icon: const Icon(Icons.check_circle, color: Colors.green),
-          onPressed: null,
-          tooltip: 'Friends',
+        return Column(
+          children: [
+            ElevatedButton(
+              onPressed:
+                  () => _handleAction(() async {
+                    final success = await widget.friendshipService.removeFriend(
+                      widget.user.userId,
+                    );
+                    if (success) {
+                      if (mounted) setState(() => _currentStatus = 'none');
+                      // We don't close immediately, let user see it happened
+                    }
+                  }),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                minimumSize: const Size(double.infinity, 45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Remove Connection',
+                style: RetroTheme.bodyLarge.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildCloseButton(simple: true),
+          ],
         );
+
       case 'sent':
-        return TextButton(
-          onPressed: null,
-          child: Text(
-            'Pending',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
-          ),
+        return Column(
+          children: [
+            OutlinedButton(
+              onPressed: null, // Disabled
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Request Pending',
+                style: RetroTheme.bodyLarge.copyWith(color: Colors.grey),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildCloseButton(simple: true),
+          ],
         );
+
       case 'received':
-        return TextButton(
-          onPressed: () => _acceptRequest(user),
-          style: TextButton.styleFrom(
-            backgroundColor: const Color(0xFF2962FF),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          ),
-          child: Text(
-            'Accept',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.white),
-          ),
-        );
-      default:
-        return IconButton(
-          icon: const Icon(Icons.person_add, color: Color(0xFF2962FF)),
-          onPressed: () => _sendRequest(user),
-          tooltip: 'Add Friend',
-        );
-    }
-  }
-
-  // Send connection request
-  Future<void> _sendRequest(UserProfile user) async {
-    setState(() {
-      _loadingStatus[user.userId] = true;
-    });
-
-    try {
-      final success = await _friendshipService.sendConnectionRequest(user);
-
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-          if (success) {
-            _connectionStatus[user.userId] = 'sent';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Connection request sent to ${user.displayName ?? user.username}',
-                  style: GoogleFonts.poppins(),
+        return Column(
+          children: [
+            ElevatedButton(
+              onPressed:
+                  () => _handleAction(() async {
+                    // FIXED: Use the robust accept method
+                    final success = await widget.friendshipService
+                        .acceptConnectionRequestFromUser(widget.user.userId);
+                    if (success) {
+                      if (mounted) setState(() => _currentStatus = 'friends');
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Failed to accept request")),
+                      );
+                    }
+                  }),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2962FF),
+                minimumSize: const Size(double.infinity, 45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                backgroundColor: Colors.green,
               ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Failed to send request',
-                  style: GoogleFonts.poppins(),
+              child: Text(
+                'Accept Request',
+                style: RetroTheme.bodyLarge.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
-                backgroundColor: Colors.red,
               ),
-            );
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error sending request: $e',
-              style: GoogleFonts.poppins(),
             ),
-            backgroundColor: Colors.red,
-          ),
+            const SizedBox(height: 12),
+            _buildCloseButton(simple: true),
+          ],
         );
-      }
+
+      default: // 'none'
+        return Column(
+          children: [
+            ElevatedButton(
+              onPressed:
+                  () => _handleAction(() async {
+                    final result = await widget.friendshipService
+                        .sendConnectionRequest(widget.user);
+                    if (result == ConnectionRequestResult.sent ||
+                        result == ConnectionRequestResult.alreadySent) {
+                      if (mounted) setState(() => _currentStatus = 'sent');
+                    } else if (result == ConnectionRequestResult.received) {
+                      if (mounted) setState(() => _currentStatus = 'received');
+                      // Refresh to update UI properly
+                    }
+                  }),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2962FF),
+                minimumSize: const Size(double.infinity, 45),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                'Add to Network',
+                style: RetroTheme.bodyLarge.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildCloseButton(simple: true),
+          ],
+        );
     }
   }
 
-  // Accept connection request
-  Future<void> _acceptRequest(UserProfile user) async {
-    setState(() {
-      _loadingStatus[user.userId] = true;
-    });
-
-    try {
-      // Find the request ID from the user who sent it
-      final requests = await _friendshipService.getPendingRequests().first;
-      final request =
-          requests.where((r) => r.fromUserId == user.userId).firstOrNull;
-
-      if (request == null) {
-        throw Exception('Request not found');
-      }
-
-      final success = await _friendshipService.acceptConnectionRequest(
-        request.id,
+  Widget _buildCloseButton({bool simple = false}) {
+    if (simple) {
+      return TextButton(
+        onPressed:
+            () => Navigator.pop(context, _currentStatus), // Return new status
+        child: Text(
+          'Close',
+          style: RetroTheme.bodyLarge.copyWith(
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       );
-
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-          if (success) {
-            _connectionStatus[user.userId] = 'friends';
-            // Refresh friends list
-            _loadFriends();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'You are now friends with ${user.displayName ?? user.username}',
-                  style: GoogleFonts.poppins(),
-                ),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Failed to accept request',
-                  style: GoogleFonts.poppins(),
-                ),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error accepting request: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: () => Navigator.pop(context, _currentStatus),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2962FF),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        child: Text(
+          'Close',
+          style: RetroTheme.bodyLarge.copyWith(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
   }
 
-  // Remove friend
-  Future<void> _removeFriend(UserProfile user) async {
-    setState(() {
-      _loadingStatus[user.userId] = true;
-    });
-
-    try {
-      final success = await _friendshipService.removeFriend(user.userId);
-
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-          if (success) {
-            _connectionStatus[user.userId] = 'none';
-            // Refresh friends list
-            _loadFriends();
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Removed ${user.displayName ?? user.username} from your network',
-                  style: GoogleFonts.poppins(),
-                ),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Failed to remove friend',
-                  style: GoogleFonts.poppins(),
-                ),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loadingStatus[user.userId] = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error removing friend: $e',
-              style: GoogleFonts.poppins(),
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
+  ImageProvider? _getProfileImage(String? photoURL) {
+    if (photoURL == null || photoURL.isEmpty) return null;
+    if (photoURL.startsWith('data:image')) {
+      try {
+        return MemoryImage(base64Decode(photoURL.split(',')[1]));
+      } catch (e) {
+        return null;
       }
     }
+    return NetworkImage(photoURL);
   }
 }

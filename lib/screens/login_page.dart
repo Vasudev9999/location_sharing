@@ -7,8 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../services/profile_service.dart';
-import '../widgets/glass_card.dart';
-import '../widgets/elevated_button.dart';
 import 'home_page.dart';
 import 'username_setup_screen.dart';
 
@@ -252,7 +250,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                       ),
                     ),
 
-                  GlassCard(
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 400),
                       curve: Curves.easeInOutBack,
@@ -354,18 +364,43 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 32),
-        KinshipElevatedButton(
-          label: 'Create Account',
-          color: kPrimaryColor, // Dark button
-          textColor: Colors.white,
-          onTap: () => _switchMode(AuthMode.register),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kPrimaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () => _switchMode(AuthMode.register),
+            child: Text(
+              'Create Account',
+              style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
         const SizedBox(height: 12),
-        KinshipElevatedButton(
-          label: 'I have an account',
-          color: Colors.white,
-          textColor: kPrimaryColor,
-          onTap: () => _switchMode(AuthMode.login),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kPrimaryColor,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              side: BorderSide(color: kPrimaryColor.withOpacity(0.2)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => _switchMode(AuthMode.login),
+            child: Text(
+              'I have an account',
+              style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+            ),
+          ),
         ),
       ],
     );
@@ -451,14 +486,26 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           const SizedBox(height: 24),
 
-          KinshipElevatedButton(
-            label:
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kAccentBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              onPressed: _isLoading ? null : () => _handleAuth(isRegister),
+              child: Text(
                 _isLoading
                     ? 'Processing...'
                     : (isRegister ? 'Sign Up' : 'Login'),
-            color: kAccentBlue,
-            textColor: Colors.white,
-            onTap: _isLoading ? () {} : () => _handleAuth(isRegister),
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+              ),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -482,12 +529,24 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           const SizedBox(height: 16),
 
-          KinshipElevatedButton(
-            label: 'Continue with Google',
-            color: Colors.white,
-            textColor: kPrimaryColor,
-            isGoogle: true,
-            onTap: _isLoading ? () {} : _handleGoogle,
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kPrimaryColor,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: BorderSide(color: kPrimaryColor.withOpacity(0.2)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.g_mobiledata_rounded, size: 20),
+              onPressed: _isLoading ? null : _handleGoogle,
+              label: Text(
+                'Continue with Google',
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+              ),
+            ),
           ),
         ],
       ),

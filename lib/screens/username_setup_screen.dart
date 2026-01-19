@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/profile_service.dart';
 import '../services/auth_service.dart';
+import '../theme/retro_theme.dart';
 import 'dart:async';
 
 class UsernameSetupScreen extends StatefulWidget {
@@ -134,7 +135,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
           SnackBar(
             content: Text(
               'Failed to create profile: $e',
-              style: GoogleFonts.poppins(),
+              style: RetroTheme.bodyMedium,
             ),
             backgroundColor: Colors.red,
           ),
@@ -160,7 +161,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
                 // Welcome Header
                 Text(
                   'Welcome! 👋',
-                  style: GoogleFonts.poppins(
+                  style: RetroTheme.bodyLarge.copyWith(
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF1A1A1A),
@@ -172,7 +173,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
 
                 Text(
                   'Choose your unique username',
-                  style: GoogleFonts.poppins(
+                  style: RetroTheme.bodyLarge.copyWith(
                     fontSize: 16,
                     color: Colors.grey[600],
                   ),
@@ -222,7 +223,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
                             )
                             : Text(
                               'Continue',
-                              style: GoogleFonts.poppins(
+                              style: RetroTheme.bodyLarge.copyWith(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                                 color: Colors.white,
@@ -251,7 +252,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
                       Expanded(
                         child: Text(
                           'You can change your display name later, but your username is permanent.',
-                          style: GoogleFonts.poppins(
+                          style: RetroTheme.bodyLarge.copyWith(
                             fontSize: 13,
                             color: const Color(0xFF2962FF),
                           ),
@@ -274,7 +275,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
       children: [
         Text(
           'Username',
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: Colors.grey[700],
@@ -285,7 +286,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
           controller: _usernameController,
           decoration: InputDecoration(
             hintText: 'john_doe',
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+            hintStyle: RetroTheme.bodyLarge.copyWith(color: Colors.grey[400]),
             prefixIcon: const Icon(
               Icons.alternate_email,
               color: Color(0xFF2962FF),
@@ -342,7 +343,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
               vertical: 16,
             ),
           ),
-          style: GoogleFonts.poppins(fontSize: 16),
+          style: RetroTheme.bodyLarge.copyWith(fontSize: 16),
           validator: (value) {
             if (value == null || value.trim().isEmpty) {
               return 'Username is required';
@@ -357,13 +358,19 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
           const SizedBox(height: 8),
           Text(
             _usernameError!,
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.red),
+            style: RetroTheme.bodyLarge.copyWith(
+              fontSize: 12,
+              color: Colors.red,
+            ),
           ),
         ] else if (_isUsernameAvailable == true) ...[
           const SizedBox(height: 8),
           Text(
             'Username is available!',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.green),
+            style: RetroTheme.bodyLarge.copyWith(
+              fontSize: 12,
+              color: Colors.green,
+            ),
           ),
         ],
       ],
@@ -376,7 +383,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
       children: [
         Text(
           'Display Name',
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: Colors.grey[700],
@@ -387,7 +394,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
           controller: _displayNameController,
           decoration: InputDecoration(
             hintText: 'John Doe',
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+            hintStyle: RetroTheme.bodyLarge.copyWith(color: Colors.grey[400]),
             prefixIcon: const Icon(Icons.person, color: Color(0xFF2962FF)),
             filled: true,
             fillColor: Colors.white,
@@ -412,7 +419,7 @@ class _UsernameSetupScreenState extends State<UsernameSetupScreen> {
               vertical: 16,
             ),
           ),
-          style: GoogleFonts.poppins(fontSize: 16),
+          style: RetroTheme.bodyLarge.copyWith(fontSize: 16),
           validator: (value) {
             if (value == null || value.trim().isEmpty) {
               return 'Display name is required';

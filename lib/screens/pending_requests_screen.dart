@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/connection_request.dart';
 import '../services/friendship_service.dart';
+import '../theme/retro_theme.dart';
 
 class PendingRequestsScreen extends StatefulWidget {
   const PendingRequestsScreen({Key? key}) : super(key: key);
@@ -26,7 +27,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
         backgroundColor: Colors.white,
         title: Text(
           'Connection Requests',
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 20,
             fontWeight: FontWeight.w600,
             color: Colors.black87,
@@ -68,7 +69,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                       isIndexError
                           ? 'Setting up database...'
                           : 'Error loading requests',
-                      style: GoogleFonts.poppins(
+                      style: RetroTheme.bodyLarge.copyWith(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
@@ -80,7 +81,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                           ? 'Please wait a moment while we prepare your notifications.'
                           : 'Please try again later.',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
+                      style: RetroTheme.bodyLarge.copyWith(
                         fontSize: 14,
                         color: Colors.grey[600],
                       ),
@@ -106,7 +107,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'No pending requests',
-                    style: GoogleFonts.poppins(
+                    style: RetroTheme.bodyLarge.copyWith(
                       fontSize: 18,
                       color: Colors.grey[600],
                     ),
@@ -161,7 +162,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                               request.fromPhotoURL!.isEmpty
                           ? Text(
                             request.fromDisplayName[0].toUpperCase(),
-                            style: GoogleFonts.poppins(
+                            style: RetroTheme.bodyLarge.copyWith(
                               fontSize: 24,
                               fontWeight: FontWeight.w600,
                               color: Colors.white,
@@ -176,7 +177,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                     children: [
                       Text(
                         request.fromDisplayName,
-                        style: GoogleFonts.poppins(
+                        style: RetroTheme.bodyLarge.copyWith(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                           color: Colors.black87,
@@ -184,7 +185,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                       ),
                       Text(
                         '@${request.fromUsername}',
-                        style: GoogleFonts.poppins(
+                        style: RetroTheme.bodyLarge.copyWith(
                           fontSize: 14,
                           color: Colors.grey[600],
                         ),
@@ -192,7 +193,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                       const SizedBox(height: 4),
                       Text(
                         _getTimeAgo(request.createdAt),
-                        style: GoogleFonts.poppins(
+                        style: RetroTheme.bodyLarge.copyWith(
                           fontSize: 12,
                           color: Colors.grey[500],
                         ),
@@ -208,7 +209,10 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed:
-                        isProcessing ? null : () => _acceptRequest(request.id),
+                        isProcessing
+                            ? null
+                            : () =>
+                                _acceptRequest(request.id, request.fromUserId),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2962FF),
                       foregroundColor: Colors.white,
@@ -232,7 +236,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                             )
                             : Text(
                               'Accept',
-                              style: GoogleFonts.poppins(
+                              style: RetroTheme.bodyLarge.copyWith(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -254,7 +258,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
                     ),
                     child: Text(
                       'Decline',
-                      style: GoogleFonts.poppins(
+                      style: RetroTheme.bodyLarge.copyWith(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -302,12 +306,15 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
     }
   }
 
-  Future<void> _acceptRequest(String requestId) async {
+  Future<void> _acceptRequest(String requestId, String fromUserId) async {
     setState(() {
       _processingRequests[requestId] = true;
     });
 
-    final success = await _friendshipService.acceptConnectionRequest(requestId);
+    final success = await _friendshipService.acceptConnectionRequest(
+      requestId,
+      fromUserId,
+    );
 
     if (mounted) {
       setState(() {
@@ -320,7 +327,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
             success
                 ? 'Connection request accepted!'
                 : 'Failed to accept request',
-            style: GoogleFonts.poppins(),
+            style: RetroTheme.bodyMedium,
           ),
           backgroundColor: success ? Colors.green : Colors.red,
         ),
@@ -346,7 +353,7 @@ class _PendingRequestsScreenState extends State<PendingRequestsScreen> {
             success
                 ? 'Connection request declined'
                 : 'Failed to decline request',
-            style: GoogleFonts.poppins(),
+            style: RetroTheme.bodyMedium,
           ),
           backgroundColor: success ? Colors.orange : Colors.red,
         ),

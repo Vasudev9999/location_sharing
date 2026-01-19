@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:crop_your_image/crop_your_image.dart';
 import '../models/user_profile.dart';
 import '../services/profile_service.dart';
+import '../theme/retro_theme.dart';
 import 'package:path_provider/path_provider.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -69,7 +70,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   const SizedBox(height: 20),
                   Text(
                     'Choose Profile Photo',
-                    style: GoogleFonts.poppins(
+                    style: RetroTheme.bodyLarge.copyWith(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -90,7 +91,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     title: Text(
                       'Take Photo',
-                      style: GoogleFonts.poppins(
+                      style: RetroTheme.bodyLarge.copyWith(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -112,7 +113,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     title: Text(
                       'Choose from Gallery',
-                      style: GoogleFonts.poppins(
+                      style: RetroTheme.bodyLarge.copyWith(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -189,7 +190,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       children: [
                         Text(
                           'Adjust Photo',
-                          style: GoogleFonts.poppins(
+                          style: RetroTheme.bodyLarge.copyWith(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: Colors.black87,
@@ -260,7 +261,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                             child: Text(
                               'Cancel',
-                              style: GoogleFonts.poppins(
+                              style: RetroTheme.bodyLarge.copyWith(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: Colors.black87,
@@ -282,7 +283,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                             child: Text(
                               'Done',
-                              style: GoogleFonts.poppins(
+                              style: RetroTheme.bodyLarge.copyWith(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                                 color: Colors.white,
@@ -328,7 +329,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           SnackBar(
             content: Text(
               'Profile updated successfully',
-              style: GoogleFonts.poppins(),
+              style: RetroTheme.bodyMedium,
             ),
             backgroundColor: Colors.green,
           ),
@@ -348,7 +349,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
+        content: Text(message, style: RetroTheme.bodyMedium),
         backgroundColor: Colors.red,
       ),
     );
@@ -367,7 +368,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         title: Text(
           'Edit Profile',
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             color: Colors.black,
             fontWeight: FontWeight.w600,
             fontSize: 20,
@@ -451,7 +452,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         )
                         : Text(
                           'Save Changes',
-                          style: GoogleFonts.poppins(
+                          style: RetroTheme.bodyLarge.copyWith(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: Colors.white,
@@ -518,7 +519,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             const SizedBox(height: 8),
             Text(
               'Uploading photo...',
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[600]),
+              style: RetroTheme.bodyLarge.copyWith(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
             ),
           ],
         ],
@@ -573,7 +577,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       child: Center(
         child: Text(
           initial,
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 48,
             fontWeight: FontWeight.w600,
             color: Colors.white,
@@ -595,7 +599,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       children: [
         Text(
           label,
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: Colors.grey[700],
@@ -607,7 +611,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           validator: validator,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
+            hintStyle: RetroTheme.bodyLarge.copyWith(color: Colors.grey[400]),
             prefixIcon: Icon(icon, color: const Color(0xFF2962FF)),
             filled: true,
             fillColor: Colors.white,
@@ -632,7 +636,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               vertical: 16,
             ),
           ),
-          style: GoogleFonts.poppins(fontSize: 16),
+          style: RetroTheme.bodyLarge.copyWith(fontSize: 16),
         ),
       ],
     );
@@ -648,7 +652,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       children: [
         Text(
           label,
-          style: GoogleFonts.poppins(
+          style: RetroTheme.bodyLarge.copyWith(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: Colors.grey[700],
@@ -668,7 +672,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const SizedBox(width: 12),
               Text(
                 value,
-                style: GoogleFonts.poppins(
+                style: RetroTheme.bodyLarge.copyWith(
                   fontSize: 16,
                   color: Colors.grey[600],
                 ),

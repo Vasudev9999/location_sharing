@@ -10,6 +10,15 @@ class UserProfile {
   final DateTime createdAt;
   final DateTime? updatedAt;
 
+  // Friends list
+  final List<String> friendIds;
+
+  // Location data
+  final double? latitude;
+  final double? longitude;
+  final double? accuracy;
+  final DateTime? locationTimestamp;
+
   UserProfile({
     required this.userId,
     required this.email,
@@ -18,6 +27,11 @@ class UserProfile {
     this.photoURL,
     required this.createdAt,
     this.updatedAt,
+    this.friendIds = const [],
+    this.latitude,
+    this.longitude,
+    this.accuracy,
+    this.locationTimestamp,
   });
 
   // Create UserProfile from Firestore document
@@ -30,6 +44,11 @@ class UserProfile {
       photoURL: map['photoURL'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
+      friendIds: List<String>.from(map['friendIds'] ?? []),
+      latitude: map['latitude'] as double?,
+      longitude: map['longitude'] as double?,
+      accuracy: map['accuracy'] as double?,
+      locationTimestamp: (map['locationTimestamp'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -42,6 +61,14 @@ class UserProfile {
       'photoURL': photoURL,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
+      'friendIds': friendIds,
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy': accuracy,
+      'locationTimestamp':
+          locationTimestamp != null
+              ? Timestamp.fromDate(locationTimestamp!)
+              : null,
     };
   }
 
@@ -52,6 +79,11 @@ class UserProfile {
     String? displayName,
     String? photoURL,
     DateTime? updatedAt,
+    List<String>? friendIds,
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+    DateTime? locationTimestamp,
   }) {
     return UserProfile(
       userId: userId,
@@ -61,6 +93,11 @@ class UserProfile {
       photoURL: photoURL ?? this.photoURL,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      friendIds: friendIds ?? this.friendIds,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      accuracy: accuracy ?? this.accuracy,
+      locationTimestamp: locationTimestamp ?? this.locationTimestamp,
     );
   }
 }

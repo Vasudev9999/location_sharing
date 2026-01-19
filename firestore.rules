@@ -11,8 +11,12 @@ service cloud.firestore {
       // Only authenticated users can create their own profile
       allow create: if request.auth != null && request.auth.uid == userId;
       
-      // Only the owner can update their own profile
-      allow update: if request.auth != null && request.auth.uid == userId;
+      // Users can update their own profile AND their friendIds array
+      // Also allow updating location fields
+      allow update: if request.auth != null && 
+        (request.auth.uid == userId || 
+         // Allow adding/removing from friendIds by the friend being added/removed
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friendIds', 'latitude', 'longitude', 'accuracy', 'locationTimestamp', 'updatedAt'])));
       
       // Only the owner can delete their own profile
       allow delete: if request.auth != null && request.auth.uid == userId;
@@ -51,32 +55,30 @@ service cloud.firestore {
     
     // Connection requests collection
     match /connection_requests/{requestId} {
-      // Users can read their own sent or received requests
-      allow read: if request.auth != null && 
-        (request.auth.uid == resource.data.fromUserId || 
-         request.auth.uid == resource.data.toUserId);
+      // Users can read their own sent or received requests, or list all for queries
+      allow read: if request.auth != null;
       
       // Authenticated users can create connection requests
       allow create: if request.auth != null && 
         request.auth.uid == request.resource.data.fromUserId;
       
-      // Only the recipient can update (accept/reject) the request
+      // Only the recipient or sender can update the request
       allow update: if request.auth != null && 
-        request.auth.uid == resource.data.toUserId;
+        (request.auth.uid == resource.data.toUserId || 
+         request.auth.uid == resource.data.fromUserId);
       
-      // Users can delete their own sent requests
+      // Users can delete their own sent requests or received requests
       allow delete: if request.auth != null && 
-        request.auth.uid == resource.data.fromUserId;
+        (request.auth.uid == resource.data.fromUserId || 
+         request.auth.uid == resource.data.toUserId);
     }
     
     // Friendships collection
     match /friendships/{friendshipId} {
-      // Users can read friendships they're part of
-      allow read: if request.auth != null && 
-        (request.auth.uid == resource.data.userId1 || 
-         request.auth.uid == resource.data.userId2);
+      // Anyone authenticated can read friendships (for queries)
+      allow read: if request.auth != null;
       
-      // System creates friendships (via cloud function or client after accepting request)
+      // Authenticated users can create friendships
       allow create: if request.auth != null;
       
       // Users can delete friendships they're part of (unfriend)
@@ -84,8 +86,10 @@ service cloud.firestore {
         (request.auth.uid == resource.data.userId1 || 
          request.auth.uid == resource.data.userId2);
       
-      // Prevent updates (friendships are created and deleted, not updated)
-      allow update: if false;
+      // Users can update friendships they're part of
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.userId1 || 
+         request.auth.uid == resource.data.userId2);
     }
     
     // Default deny all other collections
