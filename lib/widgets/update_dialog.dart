@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/update_service.dart';
+import '../theme/retro_theme.dart';
 
 class UpdateDialog extends StatefulWidget {
   final Release release;
@@ -28,178 +30,222 @@ class _UpdateDialogState extends State<UpdateDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Icon(Icons.system_update, color: Colors.blue, size: 28),
-                  SizedBox(width: 12),
-                  Expanded(
+      backgroundColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      elevation: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Color(0xE6FFFFFF), // kGlassWhite
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0xFF1A1A1A).withOpacity(0.1),
+              blurRadius: 20,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon with accent background
+                Container(
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Color(0xFF2962FF).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.system_update_rounded,
+                    color: Color(0xFF2962FF),
+                    size: 48,
+                  ),
+                ),
+                SizedBox(height: 24),
+
+                // Title
+                Text(
+                  'Update Available',
+                  style: GoogleFonts.spaceMono(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                    letterSpacing: -0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 12),
+
+                // Version badge
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Color(0xFF2962FF).withOpacity(0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    'Version ${widget.release.version}',
+                    style: GoogleFonts.spaceMono(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2962FF),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                SizedBox(height: 32),
+
+                // Download progress (if downloading)
+                if (_isDownloading) ...[
+                  Container(
+                    padding: EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF2962FF).withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Update Available',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Downloading...',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            Text(
+                              '${(_downloadProgress * 100).toStringAsFixed(1)}%',
+                              style: GoogleFonts.spaceMono(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2962FF),
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          'Version ${widget.release.version}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: Colors.grey[600]),
+                        SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                            value: _downloadProgress,
+                            minHeight: 8,
+                            backgroundColor: Colors.white.withOpacity(0.5),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFF2962FF),
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  if (!_isDownloading && _downloadedApk == null)
-                    IconButton(
-                      icon: Icon(Icons.close),
-                      onPressed: widget.onDismiss,
-                      padding: EdgeInsets.zero,
-                      constraints: BoxConstraints(),
+                  SizedBox(height: 24),
+                ]
+                // Error message (if any)
+                else if (_errorMessage != null) ...[
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.withOpacity(0.3),
+                        width: 1,
+                      ),
                     ),
-                ],
-              ),
-              SizedBox(height: 16),
-
-              // Release date
-              Text(
-                'Released: ${DateFormat('MMM dd, yyyy').format(widget.release.releaseDate)}',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
-              ),
-              SizedBox(height: 16),
-
-              // Changelog
-              Text(
-                'What\'s New',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  widget.release.changelog,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              SizedBox(height: 16),
-
-              // Download progress indicator (if downloading)
-              if (_isDownloading) ...[
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Row(
                       children: [
-                        Text(
-                          'Downloading...',
-                          style: Theme.of(context).textTheme.bodySmall,
+                        Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.red,
+                          size: 20,
                         ),
-                        Text(
-                          '${(_downloadProgress * 100).toStringAsFixed(1)}%',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 13,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: _downloadProgress,
-                      minHeight: 8,
-                      backgroundColor: Colors.grey[300],
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                  ),
+                  SizedBox(height: 24),
+                ],
+
+                // Action buttons
+                Row(
+                  children: [
+                    if (!_isDownloading && !_isInstalling)
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: widget.onDismiss,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Color(0xFF1A1A1A),
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            side: BorderSide(
+                              color: Color(0xFF1A1A1A).withOpacity(0.2),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text(
+                            'Later',
+                            style: GoogleFonts.dmSans(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (!_isDownloading && !_isInstalling) SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed:
+                            _isDownloading || _isInstalling
+                                ? null
+                                : _handleUpdatePressed,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF1A1A1A),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: Color(
+                            0xFF1A1A1A,
+                          ).withOpacity(0.3),
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          _isInstalling
+                              ? 'Installing...'
+                              : _downloadedApk != null
+                              ? 'Install'
+                              : 'Download',
+                          style: GoogleFonts.dmSans(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
-              ]
-              // Error message (if any)
-              else if (_errorMessage != null) ...[
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red[200]!),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red, size: 20),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: Colors.red[700]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 16),
               ],
-
-              // Action buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  if (!_isDownloading && !_isInstalling)
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: widget.onDismiss,
-                        style: OutlinedButton.styleFrom(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text('Later'),
-                      ),
-                    ),
-                  if (!_isDownloading && !_isInstalling) SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed:
-                          _isDownloading || _isInstalling
-                              ? null
-                              : _handleUpdatePressed,
-                      icon: Icon(
-                        _downloadedApk != null
-                            ? Icons.install_mobile
-                            : Icons.download,
-                      ),
-                      label: Text(
-                        _isInstalling
-                            ? 'Installing...'
-                            : _downloadedApk != null
-                            ? 'Install'
-                            : 'Download & Install',
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: Colors.blue,
-                        disabledBackgroundColor: Colors.grey[400],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
