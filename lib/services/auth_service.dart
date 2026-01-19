@@ -4,7 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   // Get current user
   User? get currentUser => _auth.currentUser;
@@ -52,6 +52,7 @@ class AuthService {
       // Clear any previous sign-in state
       await _googleSignIn.disconnect().catchError((_) {
         print("No previous Google Sign-In session to disconnect");
+        return null;
       });
 
       // Use the existing GoogleSignIn instance
@@ -64,35 +65,81 @@ class AuthService {
 
       print("Google user signed in: ${googleUser.email}");
 
+      // Validate Google user data
+      if (googleUser.email == null || googleUser.email!.isEmpty) {
+        throw Exception("Invalid Google account: email is null or empty");
+      }
+
       try {
-        // Get authentication details
-        final GoogleSignInAuthentication googleAuth =
-            await googleUser.authentication;
+        // Get authentication details with timeout and retry logic
+        GoogleSignInAuthentication? googleAuth;
+        int retryCount = 0;
+        const maxRetries = 3;
+
+        while (retryCount < maxRetries) {
+          try {
+            googleAuth = await googleUser.authentication.timeout(
+              const Duration(seconds: 15),
+            );
+            break; // Success, exit retry loop
+          } catch (e) {
+            retryCount++;
+            if (retryCount >= maxRetries) {
+              throw Exception(
+                "Failed to get Google authentication after $maxRetries attempts: $e",
+              );
+            }
+            print("Retrying Google authentication (attempt $retryCount)...");
+            await Future.delayed(const Duration(seconds: 1));
+          }
+        }
+
+        if (googleAuth == null) {
+          throw Exception("Google authentication returned null");
+        }
 
         print("Got Google authentication tokens");
 
-        // Check for null tokens
-        if (googleAuth.accessToken == null && googleAuth.idToken == null) {
+        // Validate tokens
+        if (googleAuth.idToken == null || googleAuth.idToken!.isEmpty) {
           throw Exception(
-            "Failed to get valid authentication tokens from Google. Both accessToken and idToken are null.",
+            "Invalid Google authentication: idToken is null or empty",
           );
         }
 
         print("AccessToken: ${googleAuth.accessToken?.substring(0, 20)}...");
         print("IdToken: ${googleAuth.idToken?.substring(0, 20)}...");
 
-        // Create Firebase credential - use idToken as primary, accessToken as fallback
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
+        // Create Firebase credential with proper validation
+        final AuthCredential credential;
+        try {
+          credential = GoogleAuthProvider.credential(
+            accessToken: googleAuth.accessToken,
+            idToken: googleAuth.idToken,
+          );
+          print("Firebase credential created successfully");
+        } catch (e) {
+          print("Error creating Firebase credential: $e");
+          throw Exception(
+            "Failed to create Firebase authentication credential: $e",
+          );
+        }
 
-        print("Created Firebase credential, signing in to Firebase...");
+        print("Signing in to Firebase...");
 
-        // Sign in with Firebase
-        final UserCredential userCredential = await _auth.signInWithCredential(
-          credential,
-        );
+        // Sign in with Firebase with timeout
+        final UserCredential userCredential = await _auth
+            .signInWithCredential(credential)
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                throw Exception("Timeout during Firebase authentication");
+              },
+            );
+
+        if (userCredential.user == null) {
+          throw Exception("Firebase authentication succeeded but user is null");
+        }
 
         print(
           "Successfully signed in with Google: ${userCredential.user?.email}",
@@ -103,20 +150,53 @@ class AuthService {
         print("Stack trace: ${e.toString()}");
 
         // Try to sign out on error
-        await _googleSignIn.signOut().catchError((err) {
-          print("Error signing out after failed auth: $err");
-        });
+        try {
+          await _googleSignIn.signOut().catchError((err) {
+            print("Error signing out after failed auth: $err");
+            return null;
+          });
+        } catch (signOutError) {
+          print("Error during sign out cleanup: $signOutError");
+        }
         rethrow;
       }
     } on FirebaseAuthException catch (e) {
       print("Firebase Auth Error: ${e.code} - ${e.message}");
       print("Firebase error details: $e");
-      rethrow;
+
+      // Handle specific Firebase auth errors
+      switch (e.code) {
+        case 'invalid-credential':
+          throw Exception(
+            'Invalid Google authentication credentials. Please try again.',
+          );
+        case 'user-disabled':
+          throw Exception('This Google account has been disabled.');
+        case 'user-not-found':
+          throw Exception('No account found with this Google account.');
+        case 'wrong-password':
+          throw Exception('Invalid authentication credentials.');
+        case 'email-already-in-use':
+          throw Exception('An account already exists with this email address.');
+        case 'operation-not-allowed':
+          throw Exception('Google sign-in is not enabled for this app.');
+        default:
+          throw Exception('Google sign-in failed: ${e.message}');
+      }
     } catch (e) {
       print("Unexpected error in Google Sign-In: $e");
       print("Error type: ${e.runtimeType}");
       print("Full error: ${e.toString()}");
-      rethrow;
+
+      // Handle specific error types
+      if (e.toString().contains('pigeon') ||
+          e.toString().contains('List<Object>')) {
+        throw Exception(
+          'Google Sign-In service error. Please check your internet connection and try again.',
+        );
+      }
+
+      throw Exception('Google sign-in failed: ${e.toString()}');
     }
   }
 
@@ -130,6 +210,7 @@ class AuthService {
       final GoogleSignIn googleSignIn = GoogleSignIn();
       await googleSignIn.signOut().catchError((e) {
         print("Error signing out from Google: $e");
+        return null;
       });
 
       print("User signed out successfully");

@@ -96,14 +96,8 @@ class LocationService {
     double longitude,
   ) async {
     try {
-      String displayName = user.displayName ?? '';
-      if (displayName.isEmpty && user.email != null) {
-        displayName = user.email!.split('@')[0];
-      }
-
       await _locationsCollection.doc(user.uid).set({
         'userId': user.uid,
-        'displayName': displayName,
         'email': user.email ?? '',
         'latitude': latitude,
         'longitude': longitude,

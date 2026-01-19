@@ -1,150 +1,123 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/friendship_service.dart';
+import '../services/location_sharing_service.dart';
 import '../models/user_location.dart';
 import 'login_page.dart';
+import 'profile_screen.dart';
+import 'search_users_screen.dart';
+import 'pending_requests_screen.dart';
+
+// Widgets
+import '../widgets/glass_card.dart';
+import '../widgets/glass_icon_button.dart';
+import '../widgets/elevated_button.dart';
 
 // ---------------------------------------------------------------------------
 // 1. THEME CONSTANTS
 // ---------------------------------------------------------------------------
-const Color kBgColor = Color(0xFFE0F7FA);
-const Color kCardBg = Color(0xFFFFFDE7);
-const Color kAccentYellow = Color(0xFFFFD54F);
-const Color kAccentOrange = Color(0xFFFF8A80);
-const Color kAccentBlue = Color(0xFF80D8FF);
-const Color kAccentGreen = Color(0xFFB9F6CA);
-const Color kBlack = Color(0xFF212121);
-
-const double kBorderWidth = 3.0;
-const double kShadowOffset = 4.0;
-const double kRadius = 24.0;
-const double kElementRadius = 14.0;
+const Color kAccentBlue = Color(0xFF2962FF);
+const Color kAccentPulse = Color(0xFF00B0FF);
+const Color kPrimaryDark = Color(0xFF1A1A1A);
+const Color kGlassWhite = Color(0xFFFFFFFF);
+const Color kGlassBorder = Color(0x1A1A1A1A);
 
 // ---------------------------------------------------------------------------
-// 2. CUSTOM MAP STYLE JSON
+// 2. CUSTOM MAP STYLE (Simple Vector)
 // ---------------------------------------------------------------------------
-const String _mapStyle = '''
+const String _simpleMapStyle = '''
 [
   {
     "elementType": "geometry",
-    "stylers": [
-      { "color": "#FFFDE7" } 
-    ]
+    "stylers": [{ "color": "#f5f5f5" }]
+  },
+  {
+    "elementType": "labels.icon",
+    "stylers": [{ "visibility": "off" }]
   },
   {
     "elementType": "labels.text.fill",
-    "stylers": [
-      { "color": "#212121" }
-    ]
+    "stylers": [{ "color": "#616161" }]
   },
   {
     "elementType": "labels.text.stroke",
-    "stylers": [
-      { "color": "#ffffff" },
-      { "weight": 4 }
-    ]
+    "stylers": [{ "color": "#f5f5f5" }]
   },
   {
-    "featureType": "administrative",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      { "color": "#212121" },
-      { "weight": 1.5 }
-    ]
-  },
-  {
-    "featureType": "landscape.natural",
-    "elementType": "geometry",
-    "stylers": [
-      { "color": "#E0F7FA" }
-    ]
+    "featureType": "administrative.land_parcel",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#bdbdbd" }]
   },
   {
     "featureType": "poi",
     "elementType": "geometry",
-    "stylers": [
-      { "color": "#B9F6CA" }
-    ]
+    "stylers": [{ "color": "#eeeeee" }]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#757575" }]
   },
   {
     "featureType": "road",
     "elementType": "geometry",
-    "stylers": [
-      { "color": "#ffffff" },
-      { "weight": 2 }
-    ]
+    "stylers": [{ "color": "#ffffff" }]
   },
   {
-    "featureType": "road",
-    "elementType": "geometry.stroke",
-    "stylers": [
-      { "color": "#212121" },
-      { "weight": 1 }
-    ]
+    "featureType": "road.arterial",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#757575" }]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#dadada" }]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#616161" }]
+  },
+  {
+    "featureType": "road.local",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#9e9e9e" }]
+  },
+  {
+    "featureType": "transit.line",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#e5e5e5" }]
+  },
+  {
+    "featureType": "transit.station",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#eeeeee" }]
   },
   {
     "featureType": "water",
-    "elementType": "geometry.fill",
-    "stylers": [
-      { "color": "#80D8FF" }
-    ]
+    "elementType": "geometry",
+    "stylers": [{ "color": "#c9c9c9" }]
   },
   {
     "featureType": "water",
     "elementType": "labels.text.fill",
-    "stylers": [
-      { "color": "#212121" }
-    ]
+    "stylers": [{ "color": "#9e9e9e" }]
   }
 ]
 ''';
 
 // ---------------------------------------------------------------------------
-// 3. STYLING HELPERS
-// ---------------------------------------------------------------------------
-BoxDecoration artistDecoration({
-  required Color color,
-  double radius = kRadius,
-  bool isPressed = false,
-  bool hasShadow = true,
-}) {
-  return BoxDecoration(
-    color: color,
-    borderRadius: BorderRadius.circular(radius),
-    border: Border.all(color: kBlack.withOpacity(0.95), width: kBorderWidth),
-    boxShadow:
-        (hasShadow && !isPressed)
-            ? [
-              BoxShadow(
-                color: kBlack,
-                blurRadius: 0,
-                offset: Offset(kShadowOffset, kShadowOffset),
-              ),
-            ]
-            : [],
-  );
-}
-
-TextStyle get headerStyle => GoogleFonts.spaceMono(
-  fontSize: 18,
-  fontWeight: FontWeight.w700,
-  color: kBlack,
-  letterSpacing: -0.5,
-);
-
-TextStyle get bodyStyle => GoogleFonts.poppins(
-  fontSize: 14,
-  fontWeight: FontWeight.w500,
-  color: kBlack,
-);
-
-// ---------------------------------------------------------------------------
-// 4. HOME PAGE
+// 3. MAIN HOME PAGE
 // ---------------------------------------------------------------------------
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -154,91 +127,70 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // Services
   final AuthService _authService = AuthService();
   final LocationService _locationService = LocationService();
+  final FriendshipService _friendshipService = FriendshipService();
+  final LocationSharingService _locationSharingService =
+      LocationSharingService();
   final Completer<GoogleMapController> _controller = Completer();
   final Location _location = Location();
 
+  // State
   LocationData? _currentLocation;
   final Set<Marker> _markers = {};
-  bool _isLoading = true;
-  bool _isMapCreated = false;
+  bool _isLoading = false;
 
-  // User selection
+  // Controls whether the map is visible yet
+  bool _isLocationReady = false;
+
+  // Default to Normal (simple vector map)
+  MapType _currentMapType = MapType.normal;
+
+  // Data
+  final Map<String, BitmapDescriptor> _customIcons = {};
   List<UserLocation> _allUsers = [];
-  String? _selectedUserId;
-
-  // Default camera position
-  static const CameraPosition _defaultPosition = CameraPosition(
-    target: LatLng(22.5937, 72.8203),
-    zoom: 15.0,
-  );
+  List<String> _friendIds = [];
+  Map<String, Map<String, dynamic>> _friendsLocations = {};
+  StreamSubscription? _friendsLocationSubscription;
+  Timer? _markerUpdateTimer;
+  bool _isPreloadingMarkers = false;
 
   @override
   void initState() {
     super.initState();
+    _preloadDefaultMarker();
     _initializeApp();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showWelcomePopup();
-    });
   }
+
+  Future<void> _preloadDefaultMarker() async {
+    _isPreloadingMarkers = true;
+    final defaultIcon = await _createPhotoMarker(null, 'Me');
+    _customIcons['default'] = defaultIcon;
+    _isPreloadingMarkers = false;
+  }
+
+  // --- INITIALIZATION ---
 
   Future<void> _initializeApp() async {
-    await _initLocationService();
-    await _locationService.startLocationSharing();
-    _loadAllUsers();
-  }
-
-  // Welcome Popup Logic
-  void _showWelcomePopup() {
-    final user = _authService.currentUser;
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            backgroundColor: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              decoration: artistDecoration(color: kCardBg, radius: kRadius),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: kAccentBlue,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: kBlack, width: kBorderWidth),
-                    ),
-                    child: const Icon(
-                      Icons.waving_hand,
-                      size: 40,
-                      color: kBlack,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'HELLO, ${user?.displayName?.toUpperCase() ?? "FRIEND"}!',
-                    style: headerStyle.copyWith(fontSize: 20),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Location sharing is active. You can now see your family members on the map.',
-                    style: bodyStyle.copyWith(color: kBlack.withOpacity(0.7)),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  _ArtistButton(
-                    label: "LET'S GO",
-                    color: kAccentGreen,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    // 1. Configure High Accuracy Settings immediately
+    await _location.changeSettings(
+      accuracy: LocationAccuracy.navigation, // Highest accuracy
+      interval: 1000, // Update every 1 second
+      distanceFilter: 2, // Update every 2 meters
     );
+
+    // 2. Fetch Location BEFORE loading the map
+    await _initLocationService();
+
+    // 3. Start sharing location with friends
+    _locationSharingService.startSharingLocation();
+
+    // 4. Load friends list and their locations
+    _loadFriends();
+
+    // 5. Start syncing other users
+    _loadAllUsers();
   }
 
   Future<void> _initLocationService() async {
@@ -246,115 +198,424 @@ class _HomePageState extends State<HomePage> {
       bool serviceEnabled = await _location.serviceEnabled();
       if (!serviceEnabled) {
         serviceEnabled = await _location.requestService();
-        if (!serviceEnabled) {
-          setState(() => _isLoading = false);
-          return;
-        }
+        if (!serviceEnabled) return;
       }
 
       PermissionStatus permissionStatus = await _location.hasPermission();
       if (permissionStatus == PermissionStatus.denied) {
         permissionStatus = await _location.requestPermission();
-        if (permissionStatus != PermissionStatus.granted) {
-          setState(() => _isLoading = false);
-          return;
+        if (permissionStatus != PermissionStatus.granted) return;
+      }
+
+      // Blocking fetch: Get accurate location first
+      final locationData = await _location.getLocation();
+
+      if (mounted) {
+        setState(() {
+          _currentLocation = locationData;
+          _isLocationReady = true; // Unlock the map
+        });
+
+        // Push update to DB
+        if (locationData.latitude != null && locationData.longitude != null) {
+          _locationService.updateCurrentUserLocation(
+            locationData.latitude!,
+            locationData.longitude!,
+          );
         }
       }
 
-      final locationData = await _location.getLocation();
-      setState(() {
-        _currentLocation = locationData;
-        _isLoading = false;
-      });
-
-      if (locationData.latitude != null && locationData.longitude != null) {
-        await _locationService.updateCurrentUserLocation(
-          locationData.latitude!,
-          locationData.longitude!,
-        );
-      }
-
+      // Listen for realtime updates
       _location.onLocationChanged.listen((newLocation) {
+        if (!mounted) return;
+
         setState(() => _currentLocation = newLocation);
+
+        // Live Camera Tracking (Optional: remove if you want free camera movement)
+        /* if (_controller.isCompleted && newLocation.latitude != null) {
+           _controller.future.then((c) {
+             c.animateCamera(CameraUpdate.newLatLng(
+               LatLng(newLocation.latitude!, newLocation.longitude!)
+             ));
+           });
+        }
+        */
+
         if (newLocation.latitude != null && newLocation.longitude != null) {
           _locationService.updateCurrentUserLocation(
             newLocation.latitude!,
             newLocation.longitude!,
           );
+          // Update the "My Location" marker immediately
+          _updateMarkers();
         }
       });
     } catch (e) {
-      print('Error initializing location: $e');
-      setState(() => _isLoading = false);
+      debugPrint('Error initializing location: $e');
+      // If error, force load map anyway at a safe default
+      setState(() => _isLocationReady = true);
     }
   }
 
   void _loadAllUsers() {
     _locationService.getAllLocations().listen((users) {
+      if (!mounted) return;
       setState(() {
         _allUsers = users;
-        if (_selectedUserId == null && _authService.currentUser != null) {
-          _selectedUserId = _authService.currentUser!.uid;
-          _showSelectedUserOnMap();
-        } else if (_selectedUserId != null) {
-          _showSelectedUserOnMap();
-        }
       });
-    }, onError: (error) => print('Error loading users: $error'));
+      // Throttle marker updates
+      _markerUpdateTimer?.cancel();
+      _markerUpdateTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) _updateMarkers();
+      });
+    });
   }
 
-  void _showSelectedUserOnMap() {
-    if (_selectedUserId == null) return;
+  // Load friends and their locations
+  void _loadFriends() {
+    // Listen to friends list
+    _friendshipService.getFriendIds().listen((friendIds) {
+      if (!mounted) return;
+      setState(() {
+        _friendIds = friendIds;
+      });
 
-    final selectedUser = _allUsers.firstWhere(
-      (user) => user.userId == _selectedUserId,
-      orElse:
-          () => UserLocation(
-            userId: '',
-            displayName: '',
-            email: '',
-            latitude: 0,
-            longitude: 0,
-            timestamp: DateTime.now(),
-          ),
+      // Cancel previous subscription
+      _friendsLocationSubscription?.cancel();
+
+      // Listen to friends' locations
+      if (friendIds.isNotEmpty) {
+        _friendsLocationSubscription = _locationSharingService
+            .getFriendsLocations(friendIds)
+            .listen((locations) {
+              if (!mounted) return;
+              setState(() {
+                _friendsLocations = locations;
+                _updateMarkers();
+              });
+            });
+      } else {
+        setState(() {
+          _friendsLocations = {};
+          _updateMarkers();
+        });
+      }
+    });
+  }
+
+  // --- MARKER LOGIC ---
+
+  Future<void> _updateMarkers() async {
+    if (_isPreloadingMarkers) return;
+
+    final String? myUserId = _authService.currentUser?.uid;
+    // We only care about MY location based on your request
+    if (myUserId == null) return;
+
+    final Set<Marker> newMarkers = {};
+
+    // 1. Prioritize Realtime Local Data for smoothness
+    // If we have _currentLocation, use that instead of waiting for the DB roundtrip
+    double lat, lng;
+    DateTime time;
+
+    if (_currentLocation != null && _currentLocation!.latitude != null) {
+      lat = _currentLocation!.latitude!;
+      lng = _currentLocation!.longitude!;
+      time = DateTime.now();
+    } else {
+      // Fallback to DB data
+      try {
+        final myUser = _allUsers.firstWhere((u) => u.userId == myUserId);
+        lat = myUser.latitude;
+        lng = myUser.longitude;
+        time = myUser.timestamp;
+      } catch (e) {
+        return; // No location data yet
+      }
+    }
+
+    final String iconKey = 'Me';
+    if (!_customIcons.containsKey(iconKey)) {
+      final myProfile = await _getUserProfile(myUserId);
+      final myPhoto = myProfile?['photoURL'] as String?;
+      final icon = await _createPhotoMarker(myPhoto, 'Me');
+      _customIcons[iconKey] = icon;
+    }
+
+    newMarkers.add(
+      Marker(
+        markerId: MarkerId(myUserId),
+        position: LatLng(lat, lng),
+        icon: _customIcons[iconKey] ?? _customIcons['default']!,
+        infoWindow: InfoWindow(
+          title: "My Location",
+          snippet: _formatTimestamp(time),
+        ),
+        anchor: const Offset(0.5, 0.8),
+      ),
     );
 
-    if (selectedUser.userId.isEmpty ||
-        selectedUser.latitude == 0 ||
-        selectedUser.longitude == 0)
-      return;
+    // 2. Add markers for friends
+    for (final entry in _friendsLocations.entries) {
+      final friendId = entry.key;
+      final locationData = entry.value;
 
-    setState(() {
-      _markers.clear();
-      _markers.add(
-        Marker(
-          markerId: MarkerId(selectedUser.userId),
-          position: LatLng(selectedUser.latitude, selectedUser.longitude),
-          infoWindow: InfoWindow(
-            title: selectedUser.displayName,
-            snippet: 'Last seen: ${_formatTimestamp(selectedUser.timestamp)}',
-          ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            _selectedUserId == _authService.currentUser?.uid
-                ? BitmapDescriptor.hueAzure
-                : BitmapDescriptor.hueRose,
-          ),
-        ),
-      );
-    });
+      final friendLat = locationData['latitude'] as double?;
+      final friendLng = locationData['longitude'] as double?;
 
-    _moveCameraToUser(selectedUser);
+      if (friendLat != null && friendLng != null) {
+        // Get friend profile to get name and photo
+        final friendProfile = await _getFriendProfile(friendId);
+        final friendName =
+            friendProfile['displayName'] ??
+            friendProfile['username'] ??
+            'Friend';
+        final friendPhoto = friendProfile['photoURL'] as String?;
+
+        final friendIconKey = 'friend_$friendId';
+        if (!_customIcons.containsKey(friendIconKey)) {
+          final icon = await _createPhotoMarker(friendPhoto, friendName);
+          _customIcons[friendIconKey] = icon;
+        }
+
+        final timestamp = locationData['timestamp'] as Timestamp?;
+        final friendTime = timestamp?.toDate() ?? DateTime.now();
+
+        newMarkers.add(
+          Marker(
+            markerId: MarkerId(friendId),
+            position: LatLng(friendLat, friendLng),
+            icon: _customIcons[friendIconKey] ?? _customIcons['default']!,
+            infoWindow: InfoWindow(
+              title: friendName,
+              snippet: _formatTimestamp(friendTime),
+            ),
+            anchor: const Offset(0.5, 0.8),
+          ),
+        );
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _markers.clear();
+        _markers.addAll(newMarkers);
+      });
+    }
   }
 
-  Future<void> _moveCameraToUser(UserLocation user) async {
-    if (!_controller.isCompleted) return;
-    final controller = await _controller.future;
-    controller.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: LatLng(user.latitude, user.longitude),
-          zoom: 16.0,
+  // Helper to get friend profile data
+  Future<Map<String, dynamic>> _getFriendProfile(String userId) async {
+    return await _getUserProfile(userId) ?? {};
+  }
+
+  // Helper to get user profile data
+  Future<Map<String, dynamic>?> _getUserProfile(String userId) async {
+    try {
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
+      return doc.data() ?? {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // 3. MODERN SIMPLE 3D MARKER ("The Floating Puck")
+  Future<BitmapDescriptor> _createModern3DMarker(String name) async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    const double size = 120.0;
+
+    // A. Soft Drop Shadow
+    final Paint shadowPaint =
+        Paint()
+          ..color = Colors.black.withOpacity(0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
+    canvas.drawOval(
+      Rect.fromLTWH(size * 0.25, size * 0.75, size * 0.5, size * 0.15),
+      shadowPaint,
+    );
+
+    // B. Main Body
+    final Paint basePaint = Paint()..color = Colors.white;
+    final Offset center = Offset(size / 2, size * 0.45);
+    final double radius = size * 0.35;
+    canvas.drawCircle(center, radius, basePaint);
+
+    // Gradient
+    final Paint innerPaint =
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(center.dx, center.dy - radius),
+            Offset(center.dx, center.dy + radius),
+            [kAccentPulse, kAccentBlue],
+          );
+    canvas.drawCircle(center, radius * 0.85, innerPaint);
+
+    // Shine
+    final Paint shinePaint =
+        Paint()
+          ..color = Colors.white.withOpacity(0.3)
+          ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(center.dx, center.dy - radius * 0.4),
+        width: radius * 1.0,
+        height: radius * 0.6,
+      ),
+      shinePaint,
+    );
+
+    // Text
+    final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final TextPainter textPainter = TextPainter(
+      text: TextSpan(
+        text: initial,
+        style: GoogleFonts.dmSans(
+          fontSize: 32,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
         ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        center.dx - (textPainter.width / 2),
+        center.dy - (textPainter.height / 2),
+      ),
+    );
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(
+      size.toInt(),
+      size.toInt(),
+    );
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+  }
+
+  // Create marker with profile photo
+  Future<BitmapDescriptor> _createPhotoMarker(
+    String? photoURL,
+    String fallbackName,
+  ) async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    const double size = 120.0;
+
+    // Shadow
+    final Paint shadowPaint =
+        Paint()
+          ..color = Colors.black.withOpacity(0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
+    canvas.drawOval(
+      Rect.fromLTWH(size * 0.25, size * 0.75, size * 0.5, size * 0.15),
+      shadowPaint,
+    );
+
+    final Offset center = Offset(size / 2, size * 0.45);
+    final double radius = size * 0.35;
+
+    // White border
+    final Paint borderPaint = Paint()..color = Colors.white;
+    canvas.drawCircle(center, radius, borderPaint);
+
+    // Clip circle for photo
+    canvas.save();
+    canvas.clipPath(
+      Path()..addOval(Rect.fromCircle(center: center, radius: radius * 0.9)),
+    );
+
+    if (photoURL != null && photoURL.isNotEmpty) {
+      try {
+        if (photoURL.startsWith('data:image')) {
+          // Base64 image
+          final base64String = photoURL.split(',')[1];
+          final Uint8List bytes = base64Decode(base64String);
+          final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+          final ui.FrameInfo frameInfo = await codec.getNextFrame();
+          final ui.Image photoImage = frameInfo.image;
+
+          // Draw image
+          final srcRect = Rect.fromLTWH(
+            0,
+            0,
+            photoImage.width.toDouble(),
+            photoImage.height.toDouble(),
+          );
+          final dstRect = Rect.fromCircle(center: center, radius: radius * 0.9);
+          canvas.drawImageRect(photoImage, srcRect, dstRect, Paint());
+        } else {
+          // Fallback to initial
+          _drawInitial(canvas, center, radius, fallbackName);
+        }
+      } catch (e) {
+        // Fallback to initial
+        _drawInitial(canvas, center, radius, fallbackName);
+      }
+    } else {
+      // No photo, draw initial
+      _drawInitial(canvas, center, radius, fallbackName);
+    }
+
+    canvas.restore();
+
+    // Add blue ring
+    final Paint ringPaint =
+        Paint()
+          ..color = kAccentBlue
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0;
+    canvas.drawCircle(center, radius * 0.9, ringPaint);
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(
+      size.toInt(),
+      size.toInt(),
+    );
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+  }
+
+  void _drawInitial(Canvas canvas, Offset center, double radius, String name) {
+    // Gradient background
+    final Paint bgPaint =
+        Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(center.dx, center.dy - radius),
+            Offset(center.dx, center.dy + radius),
+            [kAccentPulse, kAccentBlue],
+          );
+    canvas.drawCircle(center, radius * 0.9, bgPaint);
+
+    // Initial text
+    final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final TextPainter textPainter = TextPainter(
+      text: TextSpan(
+        text: initial,
+        style: GoogleFonts.dmSans(
+          fontSize: 32,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        center.dx - (textPainter.width / 2),
+        center.dy - (textPainter.height / 2),
       ),
     );
   }
@@ -362,200 +623,346 @@ class _HomePageState extends State<HomePage> {
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
     final diff = now.difference(timestamp);
-    if (diff.inSeconds < 60) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return 'Just now';
+    return '${diff.inMinutes}m ago';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kBgColor,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        title: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: artistDecoration(color: kAccentYellow, radius: 20),
-          child: Text('KINSHIP_MAP', style: headerStyle.copyWith(fontSize: 16)),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: _ArtistIconButton(
-              icon: Icons.logout_rounded,
-              color: kAccentOrange,
-              onTap: () async {
-                await _locationService.clearUserLocation();
-                await _authService.signOut();
-                if (!context.mounted) return;
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          // 1. Full Screen Map
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator(color: kBlack))
-          else
-            GoogleMap(
-              mapType: MapType.normal,
-              initialCameraPosition: _defaultPosition,
-              style: _mapStyle, // APPLYING CUSTOM THEME HERE
-              onMapCreated: (GoogleMapController controller) {
-                _controller.complete(controller);
-                setState(() => _isMapCreated = true);
-                if (_selectedUserId != null) _showSelectedUserOnMap();
-              },
-              markers: _markers,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-            ),
+  // --- UI ACTIONS ---
 
-          // 2. Bottom Control Panel
-          Positioned(
-            left: 20,
-            right: 20,
-            bottom: 30,
+  void _showMapLayerPopup() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.2),
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: const EdgeInsets.all(24),
+          child: GlassCard(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
+                Text(
+                  'MAP STYLE',
+                  style: GoogleFonts.spaceMono(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryDark.withOpacity(0.6),
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
                   children: [
-                    _ArtistFab(
-                      icon: Icons.refresh_rounded,
-                      color: kCardBg,
-                      onTap: () {
-                        if (_currentLocation != null) {
-                          _locationService.updateCurrentUserLocation(
-                            _currentLocation!.latitude!,
-                            _currentLocation!.longitude!,
-                          );
-                        }
-                        _loadAllUsers();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Map Refreshed',
-                              style: bodyStyle.copyWith(color: kCardBg),
-                            ),
-                            backgroundColor: kBlack,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            duration: const Duration(seconds: 1),
-                          ),
-                        );
-                      },
+                    Expanded(
+                      child: KinshipElevatedButton(
+                        label: 'Satellite',
+                        icon: Icons.satellite_alt_rounded,
+                        color:
+                            _currentMapType == MapType.hybrid
+                                ? kAccentBlue
+                                : Colors.white,
+                        textColor:
+                            _currentMapType == MapType.hybrid
+                                ? Colors.white
+                                : kPrimaryDark,
+                        onTap: () {
+                          setState(() => _currentMapType = MapType.hybrid);
+                          Navigator.pop(context);
+                        },
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    _ArtistFab(
-                      icon: Icons.my_location_rounded,
-                      color: kAccentBlue,
-                      onTap: () {
-                        if (_authService.currentUser != null) {
-                          setState(
-                            () =>
-                                _selectedUserId = _authService.currentUser!.uid,
-                          );
-                          _showSelectedUserOnMap();
-                        }
-                      },
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: KinshipElevatedButton(
+                        label: 'Simple',
+                        icon: Icons.map_outlined,
+                        color:
+                            _currentMapType == MapType.normal
+                                ? kAccentBlue
+                                : Colors.white,
+                        textColor:
+                            _currentMapType == MapType.normal
+                                ? Colors.white
+                                : kPrimaryDark,
+                        onTap: () {
+                          setState(() => _currentMapType = MapType.normal);
+                          Navigator.pop(context);
+                        },
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
+                KinshipElevatedButton(
+                  label: _isLoading ? 'LOGGING OUT...' : 'LOGOUT SECURELY',
+                  color: Colors.red,
+                  textColor: Colors.white,
+                  onTap: () async {
+                    if (_isLoading) return;
+                    try {
+                      setState(() => _isLoading = true);
+                      await _locationService.clearUserLocation();
+                      await _authService.signOut();
+                      if (!context.mounted) return;
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LoginPage(),
+                        ),
+                      );
+                    } catch (e) {
+                      debugPrint('Logout error: $e');
+                      if (mounted) setState(() => _isLoading = false);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-                const SizedBox(height: 16),
+  // --- UI BUILD ---
 
-                // User Selection Card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: artistDecoration(color: kCardBg),
+  @override
+  Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness:
+            _currentMapType == MapType.hybrid
+                ? Brightness.light
+                : Brightness.dark,
+      ),
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // 1. THE MAP
+          // Logic: Only show map if location is ready. Otherwise show Loading.
+          _isLocationReady
+              ? GoogleMap(
+                mapType: _currentMapType,
+                style:
+                    _currentMapType == MapType.normal ? _simpleMapStyle : null,
+                // IMPORTANT: Initialize DIRECTLY at user location
+                initialCameraPosition: CameraPosition(
+                  target: LatLng(
+                    _currentLocation?.latitude ?? 20.5937,
+                    _currentLocation?.longitude ?? 78.9629,
+                  ),
+                  zoom: 18.5, // Street Level
+                  tilt: 60.0, // 3D View
+                  bearing: 0.0,
+                ),
+                markers: _markers,
+                buildingsEnabled: true,
+                trafficEnabled: false,
+                indoorViewEnabled: false,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                rotateGesturesEnabled: true,
+                tiltGesturesEnabled: true,
+                onMapCreated: (GoogleMapController controller) {
+                  _controller.complete(controller);
+                },
+              )
+              : Container(
+                color: Colors.black,
+                child: Center(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      const CircularProgressIndicator(color: kAccentPulse),
+                      const SizedBox(height: 20),
                       Text(
-                        'TRACKING TARGET:',
-                        style: headerStyle.copyWith(
-                          fontSize: 12,
-                          color: Colors.grey,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Custom Dropdown styling
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
+                        "SECURING CONNECTION...",
+                        style: GoogleFonts.spaceMono(
                           color: Colors.white,
-                          border: Border.all(color: kBlack, width: 2),
-                          borderRadius: BorderRadius.circular(kElementRadius),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: _selectedUserId,
-                            icon: const Icon(
-                              Icons.arrow_drop_down_circle_outlined,
-                              color: kBlack,
-                            ),
-                            hint: Text('Select User', style: bodyStyle),
-                            items:
-                                _allUsers.map((user) {
-                                  return DropdownMenuItem<String>(
-                                    value: user.userId,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.person,
-                                          size: 16,
-                                          color: kBlack.withOpacity(0.6),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            user.displayName,
-                                            style: bodyStyle.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        Text(
-                                          _formatTimestamp(user.timestamp),
-                                          style: headerStyle.copyWith(
-                                            fontSize: 10,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                            onChanged: (String? userId) {
-                              setState(() => _selectedUserId = userId);
-                              _showSelectedUserOnMap();
-                            },
-                          ),
+                          fontSize: 12,
+                          letterSpacing: 2.0,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
+              ),
+
+          // 2. PROFILE BUTTON (Top Left)
+          if (_isLocationReady)
+            Positioned(
+              top: 50,
+              left: 20,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                  );
+                },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    color: Color(0xFF2962FF),
+                    size: 24,
+                  ),
+                ),
+              ),
             ),
-          ),
+
+          // 3. NOTIFICATIONS BUTTON (Top Center-Right)
+          if (_isLocationReady)
+            Positioned(
+              top: 50,
+              right: 140,
+              child: StreamBuilder<int>(
+                stream: FriendshipService().getPendingRequestsCount(),
+                builder: (context, snapshot) {
+                  final count = snapshot.data ?? 0;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const PendingRequestsScreen(),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.notifications,
+                            color: Color(0xFF2962FF),
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                      if (count > 0)
+                        Positioned(
+                          top: -5,
+                          right: -5,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 20,
+                              minHeight: 20,
+                            ),
+                            child: Text(
+                              count > 9 ? '9+' : count.toString(),
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
+          // 4. SEARCH BUTTON (Top Center-Right)
+          if (_isLocationReady)
+            Positioned(
+              top: 50,
+              right: 80,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SearchUsersScreen(),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.search,
+                    color: Color(0xFF2962FF),
+                    size: 24,
+                  ),
+                ),
+              ),
+            ),
+
+          // 5. LAYER TOGGLE BUTTON (Top Right)
+          if (_isLocationReady)
+            Positioned(
+              top: 50,
+              right: 20,
+              child: GlassIconButton(
+                icon: Icons.layers_rounded,
+                onTap: _showMapLayerPopup,
+              ),
+            ),
+
+          // 5. Fullscreen Loading Overlay (For Logout actions)
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.5),
+                child: const Center(
+                  child: CircularProgressIndicator(color: kAccentBlue),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -563,89 +970,12 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _markerUpdateTimer?.cancel();
+    _friendsLocationSubscription?.cancel();
+    _locationSharingService.dispose();
     if (_controller.isCompleted) {
       _controller.future.then((c) => c.dispose());
     }
     super.dispose();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 5. CUSTOM COMPONENTS
-// ---------------------------------------------------------------------------
-
-class _ArtistIconButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _ArtistIconButton({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: artistDecoration(color: color, radius: 12, hasShadow: true),
-        child: Icon(icon, color: kBlack, size: 20),
-      ),
-    );
-  }
-}
-
-class _ArtistFab extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _ArtistFab({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.mediumImpact();
-        onTap();
-      },
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: artistDecoration(color: color, radius: 16, hasShadow: true),
-        child: Icon(icon, color: kBlack),
-      ),
-    );
-  }
-}
-
-class _ArtistButton extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _ArtistButton({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        decoration: artistDecoration(color: color, radius: kElementRadius),
-        child: Text(label, style: headerStyle.copyWith(fontSize: 16)),
-      ),
-    );
   }
 }

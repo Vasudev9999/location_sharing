@@ -58,7 +58,52 @@ TextStyle get bodyStyle => GoogleFonts.poppins(
 );
 
 // ---------------------------------------------------------------------------
-// 3. UPDATE DIALOG WIDGET
+// 3. APP UPDATE MANAGER CLASS
+// ---------------------------------------------------------------------------
+class AppUpdateManager {
+  static final AppUpdateManager _instance = AppUpdateManager._internal();
+  final UpdateService _updateService = UpdateService();
+  bool _hasCheckedThisSession = false;
+
+  factory AppUpdateManager() {
+    return _instance;
+  }
+
+  AppUpdateManager._internal();
+
+  Future<void> checkAndShowUpdateIfAvailable(BuildContext context) async {
+    if (_hasCheckedThisSession) return;
+    _hasCheckedThisSession = true;
+
+    try {
+      final release = await _updateService.checkForUpdate();
+      if (release != null && context.mounted) {
+        _showUpdateDialog(context, release);
+      }
+    } catch (e) {
+      print('Error checking for updates: $e');
+    }
+  }
+
+  void _showUpdateDialog(BuildContext context, Release release) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => UpdateDialog(
+            release: release,
+            onDismiss: () => Navigator.pop(context),
+          ),
+    );
+  }
+
+  void resetCheckFlag() {
+    _hasCheckedThisSession = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. UPDATE DIALOG WIDGET
 // ---------------------------------------------------------------------------
 class UpdateDialog extends StatelessWidget {
   final Release release;
@@ -68,10 +113,7 @@ class UpdateDialog extends StatelessWidget {
     : super(key: key);
 
   Future<void> _launchUpdateUrl() async {
-    // Assuming release.downloadUrl exists. Adjust based on your model.
-    // If your model has 'url' or 'assets', use that.
-    // This example assumes a generic url.
-    final Uri url = Uri.parse(release.tagName); // Replace with actual URL field
+    final Uri url = Uri.parse(release.downloadUrl);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       throw Exception('Could not launch $url');
     }
@@ -154,7 +196,7 @@ class UpdateDialog extends StatelessWidget {
                   const Icon(Icons.arrow_forward_rounded, color: kBlack),
                   _VersionBadge(
                     label: 'New',
-                    version: release.tagName,
+                    version: release.version,
                     color: kAccentBlue,
                   ),
                 ],
@@ -170,15 +212,15 @@ class UpdateDialog extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 150),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: kBgColor, // Soft Cyan from theme
+                color: kAccentBlue, // Soft Cyan from theme
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: kBlack.withOpacity(0.5), width: 2),
               ),
               child: SingleChildScrollView(
                 child: Text(
-                  release.body.isEmpty
+                  release.changelog.isEmpty
                       ? 'Bug fixes and performance improvements.'
-                      : release.body,
+                      : release.changelog,
                   style: bodyStyle.copyWith(fontSize: 13, height: 1.5),
                 ),
               ),
@@ -201,11 +243,10 @@ class UpdateDialog extends StatelessWidget {
                   child: _SquishyDialogButton(
                     label: 'UPDATE',
                     color: kAccentGreen,
-                    onTap: () {
+                    onTap: () async {
                       // Trigger update logic
-                      // _launchUpdateUrl(); // Use if linking to store
-                      // OR just close if you handle update elsewhere
-                      print("Update clicked");
+                      await _launchUpdateUrl();
+                      onDismiss();
                     },
                   ),
                 ),
@@ -219,7 +260,7 @@ class UpdateDialog extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 4. LOCAL COMPONENTS (Buttons & Badges)
+// 5. LOCAL COMPONENTS (Buttons & Badges)
 // ---------------------------------------------------------------------------
 
 class _VersionBadge extends StatelessWidget {

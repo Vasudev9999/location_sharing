@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
+import '../services/profile_service.dart';
 import 'home_page.dart';
+import 'username_setup_screen.dart';
 
 // ---------------------------------------------------------------------------
 // 1. THEME CONSTANTS (MATCHING LOGIN PAGE)
@@ -84,8 +86,10 @@ class _RegisterPageState extends State<RegisterPage>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _usernameController = TextEditingController();
 
   final AuthService _authService = AuthService();
+  final ProfileService _profileService = ProfileService();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -118,6 +122,7 @@ class _RegisterPageState extends State<RegisterPage>
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _usernameController.dispose();
     _entranceCtrl.dispose();
     _bgCtrl.dispose();
     super.dispose();
@@ -127,16 +132,21 @@ class _RegisterPageState extends State<RegisterPage>
   Future<void> _register() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      try {
-        UserCredential userCredential = await _authService
-            .registerWithEmailPassword(
-              _emailController.text.trim(),
-              _passwordController.text.trim(),
-            );
+      tr// 1. Register with Firebase Auth
+        final userCredential = await _authService.registerWithEmailPassword(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
 
-        // Update Display Name
-        await userCredential.user?.updateDisplayName(
-          _nameController.text.trim(),
+        if (!mounted) return;
+
+        // 2. Create user profile with username
+        await _profileService.createUserProfile(
+          userId: userCredential.user!.uid,
+          email: _emailController.text.trim(),
+          username: _usernameController.text.trim(),
+          displayName: _nametroller.text.trim(),
+          _passwordController.text.trim(),
         );
 
         if (!mounted) return;
@@ -269,12 +279,30 @@ class _RegisterPageState extends State<RegisterPage>
                             ),
                             const SizedBox(height: 16),
 
+                            // Username
+                            _ArtistLabeledInput(
+                              controller: _usernameController,
+                              label: 'Username',
+                              hint: 'john_doe',
+                              icon: Icons.alternate_email,
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return 'Username required';
+                                }
+                                if (!_profileService.isValidUsername(v)) {
+                                  return '3-20 chars (letters, numbers, _)';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+
                             // Email
                             _ArtistLabeledInput(
                               controller: _emailController,
                               label: 'Email Address',
                               hint: 'you@kinship.app',
-                              icon: Icons.alternate_email_rounded,
+                              icon: Icons.email_outlined,
                               validator:
                                   (v) => v!.isEmpty ? 'Email required' : null,
                             ),

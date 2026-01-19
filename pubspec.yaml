@@ -42,15 +42,19 @@ dependencies:
   permission_handler: ^12.0.0+1
   provider: ^6.1.4
 
-  firebase_core: ^2.15.0
-  firebase_auth: ^4.8.0
-  cloud_firestore: ^4.9.0
-  google_maps_flutter: ^2.5.0
-  location: ^5.0.0
+  firebase_core: ^3.13.0
+  firebase_auth: ^5.5.2
+  cloud_firestore: ^5.6.6
+  firebase_storage: ^12.4.0
+  google_maps_flutter: ^2.12.1
+  location: ^8.0.0
   dio: ^5.7.0
   package_info_plus: ^8.0.0
   intl: ^0.19.0
   path_provider: ^2.1.0
+  url_launcher: ^6.0.0
+  image_picker: ^1.1.2
+  crop_your_image: ^1.0.2
 
   google_fonts: ^6.1.0
 
@@ -82,7 +86,7 @@ flutter:
   #   - images/a_dot_ham.jpeg
 
   assets:
-    - assets/google-icon.png
+    - assets/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
