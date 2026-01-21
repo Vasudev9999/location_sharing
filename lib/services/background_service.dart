@@ -19,7 +19,7 @@ const String _serviceChannelName = 'Background Service';
 const String _alertsChannelId = 'kinship_alerts_channel';
 const String _alertsChannelName = 'Location Alerts';
 const int _serviceNotificationId = 888;
-const int _updateIntervalMinutes = 30;
+const int _updateIntervalMinutes = 20;
 
 // ==============================================================================
 //  TOP-LEVEL FUNCTIONS (REQUIRED FOR BACKGROUND ISOLATE)

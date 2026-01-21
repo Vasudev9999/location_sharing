@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/friendship_service.dart';
@@ -162,9 +163,28 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _ensureUserIdSaved(); // Save user ID for background service
     _preloadDefaultMarker();
     _initializeApp();
     _checkServiceStatus();
+  }
+
+  /// Ensure the current user's ID is saved to SharedPreferences
+  /// This is critical for the background service to access the user ID
+  Future<void> _ensureUserIdSaved() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUserId = prefs.getString('current_user_id');
+
+      // Only save if not already saved or if different user
+      if (savedUserId != user.uid) {
+        await prefs.setString('current_user_id', user.uid);
+        print('💾 [HomePage] Saved user ID to SharedPreferences: ${user.uid}');
+      } else {
+        print('✅ [HomePage] User ID already in SharedPreferences: ${user.uid}');
+      }
+    }
   }
 
   Future<void> _checkServiceStatus() async {
