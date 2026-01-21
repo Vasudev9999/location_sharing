@@ -1,5 +1,7 @@
 // lib/screens/home_page.dart
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 import 'dart:ui' as ui;
 import 'dart:convert';
 import 'dart:typed_data';
@@ -7,12 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/friendship_service.dart';
 import '../services/location_sharing_service.dart';
+import '../services/background_service.dart';
 import '../theme/retro_theme.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
@@ -154,11 +156,24 @@ class _HomePageState extends State<HomePage> {
 
   bool _isPreloadingMarkers = false;
 
+  // Background service status
+  bool _isServiceRunning = false;
+
   @override
   void initState() {
     super.initState();
     _preloadDefaultMarker();
     _initializeApp();
+    _checkServiceStatus();
+  }
+
+  Future<void> _checkServiceStatus() async {
+    final isRunning = await BackgroundLocationService.isRunning();
+    if (mounted) {
+      setState(() {
+        _isServiceRunning = isRunning;
+      });
+    }
   }
 
   Future<void> _preloadDefaultMarker() async {
@@ -171,23 +186,28 @@ class _HomePageState extends State<HomePage> {
   // --- INITIALIZATION ---
 
   Future<void> _initializeApp() async {
-    // 1. Configure High Accuracy Settings immediately
+    // Show map immediately (India view)
+    setState(() {
+      _isLocationReady = true;
+    });
+
+    // 1. Configure High Accuracy Settings
     await _location.changeSettings(
-      accuracy: LocationAccuracy.navigation, // Highest accuracy
-      interval: 1000, // Update every 1 second
-      distanceFilter: 2, // Update every 2 meters
+      accuracy: LocationAccuracy.navigation,
+      interval: 1000,
+      distanceFilter: 2,
     );
 
-    // 2. Fetch Location BEFORE loading the map
+    // 2. Initialize location service
     await _initLocationService();
 
     // 3. Start sharing location
     _locationSharingService.startSharingLocation();
 
-    // 4. Load ONLY friends and their locations
+    // 4. Load friends
     _loadFriendsLogic();
 
-    // 5. Check for app updates
+    // 5. Check for updates
     _checkForUpdates();
   }
 
@@ -199,68 +219,359 @@ class _HomePageState extends State<HomePage> {
         if (!serviceEnabled) return;
       }
 
-      PermissionStatus permissionStatus = await _location.hasPermission();
-      if (permissionStatus == PermissionStatus.denied) {
-        permissionStatus = await _location.requestPermission();
-        if (permissionStatus != PermissionStatus.granted) return;
+      PermissionStatus permissionGranted = await _location.hasPermission();
+      if (permissionGranted == PermissionStatus.denied) {
+        permissionGranted = await _location.requestPermission();
+        if (permissionGranted != PermissionStatus.granted) return;
       }
 
-      // Blocking fetch: Get accurate location first
-      final locationData = await _location.getLocation();
+      // Get initial location
+      _currentLocation = await _location.getLocation();
 
-      if (mounted) {
-        setState(() {
-          _currentLocation = locationData;
-          _isLocationReady = true; // Unlock the map
-        });
-
-        // Push update to DB
-        if (locationData.latitude != null && locationData.longitude != null) {
-          _locationService.updateCurrentUserLocation(
-            locationData.latitude!,
-            locationData.longitude!,
-          );
-        }
+      // Once location is found, fly to it
+      if (_currentLocation != null &&
+          _currentLocation!.latitude != null &&
+          _currentLocation!.longitude != null) {
+        // Animate from India view to User Location
+        _flyToUserLocation(
+          _currentLocation!.latitude!,
+          _currentLocation!.longitude!,
+        );
       }
 
-      // Listen for realtime updates
-      _location.onLocationChanged.listen((newLocation) {
-        if (!mounted) return;
-
-        setState(() => _currentLocation = newLocation);
-
-        if (newLocation.latitude != null && newLocation.longitude != null) {
-          _locationService.updateCurrentUserLocation(
-            newLocation.latitude!,
-            newLocation.longitude!,
-          );
-          // Update the "My Location" marker immediately
-          _updateMarkers();
+      // Listen to location updates
+      _location.onLocationChanged.listen((LocationData location) {
+        if (mounted) {
+          setState(() {
+            _currentLocation = location;
+          });
         }
       });
     } catch (e) {
-      debugPrint('Error initializing location: $e');
-      // If error, force load map anyway at a safe default
-      setState(() => _isLocationReady = true);
+      debugPrint('Location init error: $e');
     }
+  }
+
+  // Animation: Zoom from India view to User's location
+  Future<void> _flyToUserLocation(double latitude, double longitude) async {
+    if (!_controller.isCompleted) return;
+
+    final controller = await _controller.future;
+
+    // Smooth animation to user
+    await controller.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: LatLng(latitude, longitude),
+          zoom: 15.0,
+          tilt: 0,
+        ),
+      ),
+    );
   }
 
   // CORE LOGIC: Listen to Friends with their locations in one stream
   void _loadFriendsLogic() {
-    // Listen to friends with their locations directly from user document
     _friendsWithLocationsSubscription = _locationSharingService
         .getFriendsWithLocations()
         .listen((friendsWithLocations) {
           if (!mounted) return;
 
-          print(
-            '[HomePage] Received ${friendsWithLocations.length} friends with locations',
-          );
           setState(() {
             _friendsWithLocations = friendsWithLocations;
             _updateMarkers();
           });
         });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANIMATION LOGIC
+  // ---------------------------------------------------------------------------
+  Future<void> _navigateToFriendLocation(
+    double latitude,
+    double longitude,
+    String friendName,
+  ) async {
+    if (!_controller.isCompleted) return;
+
+    final GoogleMapController controller = await _controller.future;
+    final targetLocation = LatLng(latitude, longitude);
+
+    double currentZoom = await controller.getZoomLevel();
+
+    // 1. "Take off" - Pull back and tilt
+    await controller.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: targetLocation,
+          zoom: max(currentZoom - 2, 10.0),
+          tilt: 45.0,
+          bearing: 0,
+        ),
+      ),
+    );
+
+    // 2. "Landing" - Street-level zoom with 3D side view
+    await controller.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: targetLocation,
+          zoom: 18.0, // Adjusted zoom for better view
+          tilt: 67.5, // Maximum tilt for side view
+          bearing: 45, // Slight angle for better perspective
+        ),
+      ),
+    );
+  }
+
+  // Calculate distance between two coordinates using Haversine formula
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadius = 6371; // Earth's radius in kilometers
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * pi / 180;
+  }
+
+  // ---------------------------------------------------------------------------
+  // FRIEND INFO DIALOG (UPDATED)
+  // ---------------------------------------------------------------------------
+  Future<void> _showFriendInfoDialog(
+    String friendName,
+    double latitude,
+    double longitude,
+    String? photoURL,
+    Map<String, dynamic> friendData,
+  ) async {
+    if (_currentLocation == null) return;
+
+    // 1. Distance Calculation
+    final distance = _calculateDistance(
+      _currentLocation!.latitude!,
+      _currentLocation!.longitude!,
+      latitude,
+      longitude,
+    );
+
+    // 2. Battery Logic
+    // Extract battery info robustly (handle int/double/string)
+    dynamic rawBattery = friendData['batteryLevel'];
+    final batteryState = friendData['batteryState']; // string "charging" etc.
+    final bool isCharging =
+        (batteryState.toString().toLowerCase() == 'charging');
+
+    // Determine Battery Icon & Color
+    IconData battIcon = Icons.battery_std;
+    Color battColor = RetroTheme.primary;
+    String battText = 'No status';
+    bool showBattery = false;
+
+    if (rawBattery != null) {
+      int? level = int.tryParse(rawBattery.toString());
+      if (level != null) {
+        showBattery = true;
+        battText = '$level%';
+
+        if (isCharging) {
+          battIcon = Icons.battery_charging_full;
+          battColor = Colors.green;
+        } else {
+          if (level >= 90)
+            battIcon = Icons.battery_full;
+          else if (level >= 60)
+            battIcon = Icons.battery_5_bar;
+          else if (level >= 30)
+            battIcon = Icons.battery_3_bar;
+          else
+            battIcon = Icons.battery_alert;
+
+          if (level <= 20) battColor = Colors.red;
+        }
+      }
+    }
+
+    // 3. Last Updated Logic
+    final rawTimestamp = friendData['locationTimestamp'];
+    DateTime? lastUpdated;
+    if (rawTimestamp is Timestamp) {
+      lastUpdated = rawTimestamp.toDate();
+    } else if (rawTimestamp is DateTime) {
+      lastUpdated = rawTimestamp;
+    }
+
+    final String lastSeenText =
+        lastUpdated != null ? _formatTimestamp(lastUpdated) : 'Unknown';
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                // Removed Border.all to remove blue ring
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Profile picture (No blue ring)
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      // Removed border here as well
+                    ),
+                    child: CircleAvatar(
+                      backgroundImage: _getProfileImage(photoURL),
+                      backgroundColor: RetroTheme.primary.withOpacity(0.2),
+                      child:
+                          (photoURL == null || photoURL.isEmpty)
+                              ? Text(
+                                friendName.isNotEmpty
+                                    ? friendName[0].toUpperCase()
+                                    : '?',
+                                style: RetroTheme.headlineMedium.copyWith(
+                                  color: RetroTheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                              : null,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Name
+                  Text(
+                    friendName,
+                    style: RetroTheme.titleLarge.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // --- INFO ROWS ---
+
+                  // Battery Info
+                  if (showBattery)
+                    _buildInfoRow(
+                      battIcon,
+                      'Battery',
+                      battText,
+                      iconColor: battColor,
+                    ),
+
+                  // Distance Info
+                  _buildInfoRow(
+                    Icons.near_me,
+                    'Distance',
+                    '${distance.toStringAsFixed(2)} km',
+                  ),
+
+                  // Last Updated Info
+                  _buildInfoRow(
+                    Icons.access_time_filled,
+                    'Last Updated',
+                    lastSeenText,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Navigate button (Text only, icon removed)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _navigateToFriendLocation(
+                          latitude,
+                          longitude,
+                          friendName,
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: RetroTheme.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Navigate'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
+  Widget _buildInfoRow(
+    IconData icon,
+    String label,
+    String value, {
+    Color? iconColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 24, color: iconColor ?? RetroTheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: RetroTheme.bodySmall.copyWith(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: RetroTheme.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Check for app updates
@@ -333,7 +644,6 @@ class _HomePageState extends State<HomePage> {
       final displayName = friendData['displayName'] as String?;
       final username = friendData['username'] as String?;
       final photoURL = friendData['photoURL'] as String?;
-      final locationTimestamp = friendData['locationTimestamp'] as DateTime;
 
       final userName = displayName ?? username ?? 'Friend';
 
@@ -349,10 +659,14 @@ class _HomePageState extends State<HomePage> {
           markerId: MarkerId(userId),
           position: LatLng(latitude, longitude),
           icon: _customIcons[userIconKey] ?? _customIcons['default']!,
-          infoWindow: InfoWindow(
-            title: userName,
-            snippet: _formatTimestamp(locationTimestamp),
-          ),
+          onTap:
+              () => _showFriendInfoDialog(
+                userName,
+                latitude,
+                longitude,
+                photoURL,
+                friendData,
+              ),
           anchor: const Offset(0.5, 0.5),
         ),
       );
@@ -415,6 +729,7 @@ class _HomePageState extends State<HomePage> {
     if (photoURL != null && photoURL.isNotEmpty) {
       try {
         if (photoURL.startsWith('data:image')) {
+          // Handle base64 encoded image
           final base64String = photoURL.split(',')[1];
           final Uint8List bytes = base64Decode(base64String);
           final ui.Codec codec = await ui.instantiateImageCodec(bytes);
@@ -429,6 +744,32 @@ class _HomePageState extends State<HomePage> {
           );
           final dstRect = Rect.fromCircle(center: center, radius: radius * 0.9);
           canvas.drawImageRect(photoImage, srcRect, dstRect, Paint());
+        } else if (photoURL.startsWith('http')) {
+          // Handle network URL (Google profile picture)
+          try {
+            final imageData = await _loadNetworkImage(photoURL);
+            if (imageData != null) {
+              final ui.Codec codec = await ui.instantiateImageCodec(imageData);
+              final ui.FrameInfo frameInfo = await codec.getNextFrame();
+              final ui.Image photoImage = frameInfo.image;
+
+              final srcRect = Rect.fromLTWH(
+                0,
+                0,
+                photoImage.width.toDouble(),
+                photoImage.height.toDouble(),
+              );
+              final dstRect = Rect.fromCircle(
+                center: center,
+                radius: radius * 0.9,
+              );
+              canvas.drawImageRect(photoImage, srcRect, dstRect, Paint());
+            } else {
+              _drawInitial(canvas, center, radius, fallbackName);
+            }
+          } catch (e) {
+            _drawInitial(canvas, center, radius, fallbackName);
+          }
         } else {
           _drawInitial(canvas, center, radius, fallbackName);
         }
@@ -441,13 +782,8 @@ class _HomePageState extends State<HomePage> {
 
     canvas.restore();
 
-    // Add blue ring
-    final Paint ringPaint =
-        Paint()
-          ..color = RetroTheme.primary
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0;
-    canvas.drawCircle(center, radius * 0.9, ringPaint);
+    // REMOVED BLUE RING DRAWING HERE
+    // The previous blue ring stroke code is deleted as per request
 
     final ui.Image image = await pictureRecorder.endRecording().toImage(
       size.toInt(),
@@ -457,6 +793,48 @@ class _HomePageState extends State<HomePage> {
       format: ui.ImageByteFormat.png,
     );
     return BitmapDescriptor.fromBytes(byteData!.buffer.asUint8List());
+  }
+
+  // Load network image
+  Future<Uint8List?> _loadNetworkImage(String imageUrl) async {
+    try {
+      final response = await HttpClient().getUrl(Uri.parse(imageUrl));
+      final httpResponse = await response.close();
+      if (httpResponse.statusCode == 200) {
+        return await httpResponse.fold<Uint8List>(
+          Uint8List(0),
+          (previous, List<int> next) => Uint8List.fromList(previous + next),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error loading network image: $e');
+    }
+    return null;
+  }
+
+  // Show friend device info dialog
+  // Get profile image from base64 or network URL
+  ImageProvider? _getProfileImage(String? photoURL) {
+    if (photoURL == null || photoURL.isEmpty) {
+      return null;
+    }
+
+    if (photoURL.startsWith('data:image')) {
+      // Base64 encoded image
+      try {
+        final base64String = photoURL.split(',')[1];
+        final Uint8List bytes = base64Decode(base64String);
+        return MemoryImage(bytes);
+      } catch (e) {
+        debugPrint('Error loading base64 image: $e');
+        return null;
+      }
+    } else if (photoURL.startsWith('http')) {
+      // Network URL (Google profile picture)
+      return NetworkImage(photoURL);
+    }
+
+    return null;
   }
 
   void _drawInitial(Canvas canvas, Offset center, double radius, String name) {
@@ -491,11 +869,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Better Timestamp Formatting
   String _formatTimestamp(DateTime timestamp) {
     final now = DateTime.now();
     final diff = now.difference(timestamp);
-    if (diff.inMinutes < 1) return 'Just now';
-    return '${diff.inMinutes}m ago';
+
+    if (diff.inSeconds < 60) {
+      return 'Just now';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      // Fallback for older dates
+      return '${timestamp.day}/${timestamp.month}';
+    }
   }
 
   // --- UI ACTIONS ---
@@ -673,12 +1063,10 @@ class _HomePageState extends State<HomePage> {
                 style:
                     _currentMapType == MapType.normal ? _simpleMapStyle : null,
                 initialCameraPosition: CameraPosition(
-                  target: LatLng(
-                    _currentLocation?.latitude ?? 20.5937,
-                    _currentLocation?.longitude ?? 78.9629,
-                  ),
-                  zoom: 18.5,
-                  tilt: 60.0,
+                  // Show INDIA Top View initially
+                  target: const LatLng(20.5937, 78.9629),
+                  zoom: 5.0, // Zoom out to see India
+                  tilt: 0.0,
                   bearing: 0.0,
                 ),
                 markers: _markers,
@@ -698,22 +1086,8 @@ class _HomePageState extends State<HomePage> {
               )
               : Container(
                 color: Colors.black,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: RetroTheme.accent),
-                      const SizedBox(height: 20),
-                      Text(
-                        "SECURING CONNECTION...",
-                        style: RetroTheme.bodyLarge.copyWith(
-                          color: Colors.white,
-                          fontSize: 12,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: const Center(
+                  child: CircularProgressIndicator(color: RetroTheme.accent),
                 ),
               ),
 
@@ -891,7 +1265,104 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
-          // 6. LOADING OVERLAY
+          // 6. FRIENDS PROFILE BUTTONS (Bottom)
+          if (_isLocationReady && _friendsWithLocations.isNotEmpty)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              right: 20,
+              child: Container(
+                height: 80,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.95),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.5),
+                    width: 1,
+                  ),
+                ),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _friendsWithLocations.length,
+                  itemBuilder: (context, index) {
+                    final friend = _friendsWithLocations[index];
+                    return GestureDetector(
+                      onTap:
+                          () => _navigateToFriendLocation(
+                            friend['latitude'] as double,
+                            friend['longitude'] as double,
+                            friend['displayName'] as String,
+                          ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                // Blue ring removed here too
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: RetroTheme.primary.withOpacity(0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: CircleAvatar(
+                                backgroundImage: _getProfileImage(
+                                  friend['photoURL'] as String?,
+                                ),
+                                backgroundColor: RetroTheme.primary.withOpacity(
+                                  0.2,
+                                ),
+                                child:
+                                    (friend['photoURL'] == null ||
+                                            (friend['photoURL'] as String)
+                                                .isEmpty)
+                                        ? Text(
+                                          (friend['displayName'] as String?)
+                                                      ?.isNotEmpty ==
+                                                  true
+                                              ? (friend['displayName']
+                                                      as String)
+                                                  .characters
+                                                  .first
+                                                  .toUpperCase()
+                                              : '?',
+                                          style: RetroTheme.bodyLarge.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                            color: RetroTheme.primary,
+                                          ),
+                                        )
+                                        : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // 7. LOADING OVERLAY
           if (_isLoading)
             Positioned.fill(
               child: Container(

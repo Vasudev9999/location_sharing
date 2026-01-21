@@ -1,8 +1,11 @@
 // lib/services/location_sharing_service.dart
 import 'dart:async';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:location/location.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 class LocationSharingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -86,20 +89,57 @@ class LocationSharingService {
     }
 
     try {
-      // Update location in the user's own document
-      await _firestore.collection('users').doc(currentUserId).update({
+      // Get device information
+      final battery = Battery();
+      int? batteryLevel;
+      String? batteryState;
+      String deviceModel = 'Unknown';
+      String osVersion = 'Unknown';
+
+      try {
+        batteryLevel = await battery.batteryLevel;
+        final state = await battery.batteryState;
+        batteryState = state.toString().split('.').last;
+      } catch (e) {
+        print('Error getting battery info: $e');
+      }
+
+      try {
+        final deviceInfo = DeviceInfoPlugin();
+        if (Platform.isAndroid) {
+          final androidInfo = await deviceInfo.androidInfo;
+          deviceModel = androidInfo.model;
+          osVersion = 'Android ${androidInfo.version.release}';
+        } else if (Platform.isIOS) {
+          final iosInfo = await deviceInfo.iosInfo;
+          deviceModel = iosInfo.model;
+          osVersion = 'iOS ${iosInfo.systemVersion}';
+        }
+      } catch (e) {
+        print('Error getting device info: $e');
+      }
+
+      final locationUpdateData = {
         'latitude': locationData.latitude,
         'longitude': locationData.longitude,
         'accuracy': locationData.accuracy,
         'locationTimestamp': FieldValue.serverTimestamp(),
-      });
+        'batteryLevel': batteryLevel,
+        'batteryState': batteryState,
+        'deviceModel': deviceModel,
+        'osVersion': osVersion,
+      };
+
+      // Update location in the user's own document
+      await _firestore
+          .collection('users')
+          .doc(currentUserId)
+          .update(locationUpdateData);
 
       // Also update in user_locations for backward compatibility
       await _firestore.collection('user_locations').doc(currentUserId).set({
         'userId': currentUserId,
-        'latitude': locationData.latitude,
-        'longitude': locationData.longitude,
-        'accuracy': locationData.accuracy,
+        ...locationUpdateData,
         'timestamp': FieldValue.serverTimestamp(),
         'lastUpdated': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
@@ -148,23 +188,8 @@ class LocationSharingService {
         // FILTER: Only include if doc ID (userId) is in friendIds
         if (friendIds.contains(doc.id)) {
           final data = doc.data();
-          // Only include locations updated in the last 30 minutes
-          final timestamp = data['timestamp'] as Timestamp?;
-          if (timestamp != null) {
-            final age = DateTime.now().difference(timestamp.toDate());
-            if (age.inMinutes < 30) {
-              locations[doc.id] = data;
-              print(
-                '[LocationService] Found location for friend ${doc.id}, age: ${age.inMinutes} min',
-              );
-            } else {
-              print(
-                '[LocationService] Location for ${doc.id} too old: ${age.inMinutes} min',
-              );
-            }
-          } else {
-            print('[LocationService] No timestamp for ${doc.id}');
-          }
+          locations[doc.id] = data;
+          print('[LocationService] Found location for friend ${doc.id}');
         }
       }
       print('[LocationService] Returning ${locations.length} friend locations');
@@ -179,15 +204,7 @@ class LocationSharingService {
           await _firestore.collection('user_locations').doc(userId).get();
 
       if (doc.exists) {
-        final data = doc.data();
-        final timestamp = data?['timestamp'] as Timestamp?;
-        if (timestamp != null) {
-          final age = DateTime.now().difference(timestamp.toDate());
-          // Only return location if it's fresh (less than 30 minutes old)
-          if (age.inMinutes < 30) {
-            return data;
-          }
-        }
+        return doc.data();
       }
       return null;
     } catch (e) {
@@ -231,30 +248,26 @@ class LocationSharingService {
         final locationTimestamp =
             (friendData['locationTimestamp'] as Timestamp?)?.toDate();
 
-        // Check if location is recent (within 30 minutes)
+        // Check if location data exists
         if (latitude != null &&
             longitude != null &&
             locationTimestamp != null) {
-          final age = DateTime.now().difference(locationTimestamp);
-          if (age.inMinutes < 30) {
-            friendsWithLocations.add({
-              'userId': friendDoc.id,
-              'displayName': friendData['displayName'],
-              'username': friendData['username'],
-              'photoURL': friendData['photoURL'],
-              'latitude': latitude,
-              'longitude': longitude,
-              'accuracy': friendData['accuracy'],
-              'locationTimestamp': locationTimestamp,
-            });
-            print(
-              '[LocationService] Friend ${friendDoc.id} location age: ${age.inMinutes} min',
-            );
-          } else {
-            print(
-              '[LocationService] Friend ${friendDoc.id} location too old: ${age.inMinutes} min',
-            );
-          }
+          friendsWithLocations.add({
+            'userId': friendDoc.id,
+            'displayName': friendData['displayName'],
+            'username': friendData['username'],
+            'photoURL': friendData['photoURL'],
+            'latitude': latitude,
+            'longitude': longitude,
+            'accuracy': friendData['accuracy'],
+            'locationTimestamp': locationTimestamp,
+            // Include device/battery fields if available so UI can show them
+            'batteryLevel': friendData['batteryLevel'],
+            'batteryState': friendData['batteryState'],
+            'deviceModel': friendData['deviceModel'],
+            'osVersion': friendData['osVersion'],
+          });
+          print('[LocationService] Friend ${friendDoc.id} location found');
         } else {
           print(
             '[LocationService] Friend ${friendDoc.id} has no location data',

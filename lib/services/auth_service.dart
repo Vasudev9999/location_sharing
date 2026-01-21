@@ -1,6 +1,7 @@
 // lib/services/auth_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -18,10 +19,15 @@ class AuthService {
     String password,
   ) async {
     try {
-      return await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      // Save user ID to SharedPreferences for background service
+      await _saveUserIdToPrefs(credential.user?.uid);
+
+      return credential;
     } catch (e) {
       print("Error signing in with email/password: $e");
       rethrow;
@@ -34,13 +40,27 @@ class AuthService {
     String password,
   ) async {
     try {
-      return await _auth.createUserWithEmailAndPassword(
+      final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
+
+      // Save user ID to SharedPreferences for background service
+      await _saveUserIdToPrefs(credential.user?.uid);
+
+      return credential;
     } catch (e) {
       print("Error registering with email/password: $e");
       rethrow;
+    }
+  }
+
+  // Helper method to save user ID to SharedPreferences
+  Future<void> _saveUserIdToPrefs(String? userId) async {
+    if (userId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('current_user_id', userId);
+      print('💾 Saved user ID to SharedPreferences: $userId');
     }
   }
 
@@ -144,6 +164,10 @@ class AuthService {
         print(
           "Successfully signed in with Google: ${userCredential.user?.email}",
         );
+
+        // Save user ID to SharedPreferences for background service
+        await _saveUserIdToPrefs(userCredential.user?.uid);
+
         return userCredential;
       } catch (e) {
         print("Error in Google authentication details: $e");
@@ -203,6 +227,11 @@ class AuthService {
   // Sign out
   Future<void> signOut() async {
     try {
+      // Clear user ID from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('current_user_id');
+      print('🗑️ Cleared user ID from SharedPreferences');
+
       // First sign out from Firebase
       await _auth.signOut();
 

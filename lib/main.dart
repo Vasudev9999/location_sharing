@@ -3,10 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'wrapper.dart';
 import 'services/app_update_manager.dart';
+import 'services/background_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // Initialize background location service
+  try {
+    await BackgroundLocationService.initialize();
+    print('✅ Background service initialized');
+  } catch (e) {
+    print('❌ Failed to initialize background service: $e');
+  }
 
   // FIX: Status Bar Visibility
   SystemChrome.setSystemUIOverlayStyle(
