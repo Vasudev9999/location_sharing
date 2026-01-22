@@ -18,8 +18,6 @@ import '../services/location_sharing_service.dart';
 import '../services/background_service.dart';
 import '../services/permission_manager.dart';
 import '../theme/retro_theme.dart';
-import '../widgets/update_dialog.dart';
-import '../services/update_service.dart';
 import 'login_page.dart';
 import 'profile_screen.dart';
 import 'search_users_screen.dart';
@@ -223,9 +221,6 @@ class _HomePageState extends State<HomePage> {
 
     // 4. Load friends
     _loadFriendsLogic();
-
-    // 5. Check for updates
-    _checkForUpdates();
   }
 
   Future<void> _initLocationService() async {
@@ -599,32 +594,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   // Check for app updates
-  Future<void> _checkForUpdates() async {
-    try {
-      final updateService = UpdateService();
-      final release = await updateService.checkForUpdate();
-
-      if (release != null && mounted) {
-        // Wait a bit for the UI to settle before showing dialog
-        await Future.delayed(const Duration(seconds: 2));
-
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder:
-                (context) => UpdateDialog(
-                  release: release,
-                  onDismiss: () => Navigator.pop(context),
-                ),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('Error checking for updates: $e');
-    }
-  }
-
   // --- MARKER LOGIC ---
 
   Future<void> _updateMarkers() async {
