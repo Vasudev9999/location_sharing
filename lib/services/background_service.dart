@@ -54,7 +54,9 @@ void onStart(ServiceInstance service) async {
     ),
   );
 
-  print('🚀 [Background] Service started in isolate');
+  print(
+    '🚀 [Background] Service started in isolate - Update interval: ${_updateIntervalMinutes} minute(s)',
+  );
 
   // 4. Listen for stop commands
   service.on('stop').listen((event) {
@@ -62,17 +64,17 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  // 5. BATTERY-EFFICIENT: Timer wakes every 30 minutes
-  Timer.periodic(const Duration(minutes: _updateIntervalMinutes), (
-    timer,
-  ) async {
-    print('⏰ [Background] Timer tick - performing update');
+  // 5. Perform initial update immediately
+  print('📍 [Background] Performing initial update immediately');
+  await _performLocationUpdate(service, notificationsPlugin);
+
+  // 6. Timer wakes every 1 minute for location updates
+  Timer.periodic(Duration(minutes: _updateIntervalMinutes), (timer) async {
+    print('⏰ [Background] Timer tick at ${DateTime.now()} - performing update');
     await _performLocationUpdate(service, notificationsPlugin);
   });
 
-  // 6. Perform initial update immediately
-  print('📍 [Background] Performing initial update');
-  await _performLocationUpdate(service, notificationsPlugin);
+  print('✅ [Background] Service fully initialized and ready');
 }
 
 /// Helper function to perform location update
@@ -80,35 +82,42 @@ Future<void> _performLocationUpdate(
   ServiceInstance service,
   FlutterLocalNotificationsPlugin notifPlugin,
 ) async {
+  final updateStartTime = DateTime.now();
+  print('═════════════════════════════════════════════════');
+  print('🔄 [Background] Update cycle started at $updateStartTime');
+
   try {
     // A. Get User ID from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('current_user_id');
 
     if (userId == null || userId.isEmpty) {
-      print('⚠️ [Background] No user ID found in SharedPreferences');
+      print('⚠️ [Background] SKIP: No user ID found in SharedPreferences');
       return;
     }
-
-    print('👤 [Background] User ID: $userId');
 
     // B. Check Location Permissions
     final permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      print('⚠️ [Background] Location permission denied');
+      print('⚠️ [Background] SKIP: Location permission denied or revoked');
       return;
     }
 
+    print('✓ Permissions OK, User: $userId');
+
     // C. Fetch SINGLE Location Fix (Battery Efficient - Medium Accuracy)
+    print('📡 Requesting GPS location (medium accuracy, 30s timeout)...');
     final position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.medium,
       timeLimit: const Duration(seconds: 30),
     );
 
-    print(
-      '📍 [Background] Location: ${position.latitude}, ${position.longitude}',
-    );
+    final lat = position.latitude;
+    final lng = position.longitude;
+    final acc = position.accuracy.toStringAsFixed(1);
+
+    print('✓ GPS location: $lat, $lng (accuracy: ${acc}m)');
 
     // D. Get Battery Information
     final battery = Battery();
@@ -116,35 +125,67 @@ Future<void> _performLocationUpdate(
     final batteryState = await battery.batteryState;
     final batteryStateString = _batteryStateToString(batteryState);
 
-    print('🔋 [Background] Battery: $batteryLevel% ($batteryStateString)');
+    print('✓ Battery: $batteryLevel% ($batteryStateString)');
 
-    // E. Update Firestore
-    await FirebaseFirestore.instance.collection('users').doc(userId).update({
-      'latitude': position.latitude,
-      'longitude': position.longitude,
+    // E. Update Firestore with retry logic
+    print('🔥 Updating Firestore...');
+    final now = DateTime.now();
+    final updateData = {
+      'latitude': lat,
+      'longitude': lng,
       'locationTimestamp': FieldValue.serverTimestamp(),
       'batteryLevel': batteryLevel,
       'batteryState': batteryStateString,
       'isBackgroundUpdate': true,
       'accuracy': position.accuracy,
-      'lastBackgroundUpdateTime': DateTime.now().toIso8601String(),
-    });
+      'lastBackgroundUpdateTime': now.toIso8601String(),
+      'backgroundUpdateCount': FieldValue.increment(1), // Track total updates
+    };
 
-    print('✅ [Background] Firestore updated successfully');
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update(updateData);
+      print('✓ Firestore updated successfully');
+    } catch (firestoreError) {
+      // If document doesn't exist, create it
+      if (firestoreError.toString().contains('NotFound') ||
+          firestoreError.toString().contains('not exist')) {
+        print('ℹ️ Document not found, creating new one...');
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .set(updateData);
+        print('✓ Firestore document created and updated');
+      } else {
+        throw firestoreError;
+      }
+    }
 
-    // F. Update Foreground Notification
+    // F. Update Foreground Notification with latest info
     if (service is AndroidServiceInstance) {
-      final now = DateTime.now();
       final timeString =
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
 
       await service.setForegroundNotificationInfo(
-        title: 'Kinship',
-        content: 'Last update: $timeString',
+        title: 'Kinship Active',
+        content: 'Last update: $timeString | Battery: $batteryLevel%',
       );
     }
-  } catch (e) {
-    print('❌ [Background] Error updating location: $e');
+
+    // G. Store last update time locally for UI display
+    await prefs.setString('last_background_update_time', now.toIso8601String());
+    await prefs.setDouble('last_latitude', lat);
+    await prefs.setDouble('last_longitude', lng);
+
+    final duration = DateTime.now().difference(updateStartTime);
+    print('✅ [Background] Update completed in ${duration.inSeconds}s');
+    print('═════════════════════════════════════════════════\n');
+  } catch (e, stackTrace) {
+    print('❌ [Background] ERROR: $e');
+    print('Stack: $stackTrace');
+    print('═════════════════════════════════════════════════\n');
   }
 }
 

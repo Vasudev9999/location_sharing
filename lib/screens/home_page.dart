@@ -16,6 +16,7 @@ import '../services/location_service.dart';
 import '../services/friendship_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/background_service.dart';
+import '../services/permission_manager.dart';
 import '../theme/retro_theme.dart';
 import '../widgets/update_dialog.dart';
 import '../services/update_service.dart';
@@ -157,16 +158,12 @@ class _HomePageState extends State<HomePage> {
 
   bool _isPreloadingMarkers = false;
 
-  // Background service status
-  bool _isServiceRunning = false;
-
   @override
   void initState() {
     super.initState();
     _ensureUserIdSaved(); // Save user ID for background service
     _preloadDefaultMarker();
     _initializeApp();
-    _checkServiceStatus();
   }
 
   /// Ensure the current user's ID is saved to SharedPreferences
@@ -187,15 +184,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _checkServiceStatus() async {
-    final isRunning = await BackgroundLocationService.isRunning();
-    if (mounted) {
-      setState(() {
-        _isServiceRunning = isRunning;
-      });
-    }
-  }
-
   Future<void> _preloadDefaultMarker() async {
     _isPreloadingMarkers = true;
     final defaultIcon = await _createPhotoMarker(null, 'Me');
@@ -211,12 +199,21 @@ class _HomePageState extends State<HomePage> {
       _isLocationReady = true;
     });
 
-    // 1. Configure High Accuracy Settings
-    await _location.changeSettings(
-      accuracy: LocationAccuracy.navigation,
-      interval: 1000,
-      distanceFilter: 2,
-    );
+    // 1. Request location permission before any location access
+    final permissionGranted =
+        await PermissionManager.requestLocationPermissions(context);
+
+    if (!permissionGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Location permission is required'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     // 2. Initialize location service
     await _initLocationService();
@@ -244,6 +241,13 @@ class _HomePageState extends State<HomePage> {
         permissionGranted = await _location.requestPermission();
         if (permissionGranted != PermissionStatus.granted) return;
       }
+
+      // Configure High Accuracy Settings AFTER permission is granted
+      await _location.changeSettings(
+        accuracy: LocationAccuracy.navigation,
+        interval: 1000,
+        distanceFilter: 2,
+      );
 
       // Get initial location
       _currentLocation = await _location.getLocation();

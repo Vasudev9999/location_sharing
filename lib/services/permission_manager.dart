@@ -35,7 +35,7 @@ class PermissionManager {
     return false;
   }
 
-  /// Request location permissions with explanation dialog
+  /// Request location permissions - directly use Android's system dialogs
   static Future<bool> requestLocationPermissions(BuildContext context) async {
     // Check current permission status
     LocationPermission permission = await Geolocator.checkPermission();
@@ -48,134 +48,22 @@ class PermissionManager {
 
     // If denied forever, open settings
     if (permission == LocationPermission.deniedForever) {
-      if (context.mounted) {
-        await _showSettingsDialog(
-          context,
-          title: 'Location Permission Required',
-          message:
-              'Location permission is permanently denied. '
-              'Please enable it in app settings to use location sharing.',
-        );
-      }
       await Geolocator.openAppSettings();
       return false;
     }
 
-    // Step 1: Request foreground location first
-    if (permission == LocationPermission.denied) {
-      if (context.mounted) {
-        final shouldContinue = await _showExplanationDialog(
-          context,
-          title: 'Location Permission',
-          message:
-              'Kinship needs access to your location to share it with your family members.',
-          isForeground: true,
-        );
+    // Request permission - this will show Android's native permission dialog
+    permission = await Geolocator.requestPermission();
 
-        if (!shouldContinue) return false;
-      }
-
-      permission = await Geolocator.requestPermission();
-
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        print('⚠️ Foreground location permission denied');
-        return false;
-      }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      print('⚠️ Location permission denied');
+      return false;
     }
 
-    // Step 2: Request background location (if only foreground is granted)
-    if (permission == LocationPermission.whileInUse) {
-      if (context.mounted) {
-        final shouldContinue = await _showExplanationDialog(
-          context,
-          title: 'Background Location Permission',
-          message:
-              'To share your location even when the app is closed, '
-              'Kinship needs "Allow all the time" permission.\n\n'
-              'Your location is only shared with people you explicitly add to your circle. '
-              'We respect your privacy and never sell your data.',
-          isForeground: false,
-        );
-
-        if (!shouldContinue) return false;
-      }
-
-      // Request background location
-      // Note: On Android 11+, this may open system settings instead of showing a dialog
-      permission = await Geolocator.requestPermission();
-
-      if (permission == LocationPermission.always) {
-        print('✅ Background location permission granted');
-        return true;
-      } else {
-        print('⚠️ Background location permission not granted');
-        // User may have selected "While using the app" again
-        return permission == LocationPermission.whileInUse;
-      }
-    }
-
+    print('✅ Location permission granted: $permission');
     return permission == LocationPermission.always ||
         permission == LocationPermission.whileInUse;
-  }
-
-  /// Show explanation dialog before requesting permission
-  static Future<bool> _showExplanationDialog(
-    BuildContext context, {
-    required String title,
-    required String message,
-    required bool isForeground,
-  }) async {
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-    );
-
-    return result ?? false;
-  }
-
-  /// Show dialog when permission is permanently denied
-  static Future<void> _showSettingsDialog(
-    BuildContext context, {
-    required String title,
-    required String message,
-  }) async {
-    await showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Geolocator.openAppSettings();
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-    );
   }
 
   /// Check if all necessary permissions are granted
